@@ -492,7 +492,16 @@ final class AudioEngine: @unchecked Sendable {
     /// A sum of tones across the spectrum rather than one sine, so every band
     /// and every bin has something in it. Without this a self test cannot tell
     /// a broken visual from a quiet room, which is the entire difficulty.
+    private var testCallCount = 0
+
     func injectTestSignal() {
+        // Vary the volume across frames so consecutive 1024-sample windows
+        // have different bass RMS, giving the beat detector real flux to
+        // detect. A "kick" every 7 frames at 60 fps ≈ 8.5 beats/s.
+        let kick = (testCallCount % 7) == 0
+        let gain: Float = kick ? 0.6 : 0.12
+        testCallCount += 1
+
         var phase = Float(writeIndex.load())
         for _ in 0..<1024 {
             var v: Float = 0
@@ -500,7 +509,7 @@ final class AudioEngine: @unchecked Sendable {
                 v += sinf(phase * 0.0013 * Float(harmonic)) / Float(harmonic)
             }
             let w = writeIndex.load()
-            ring[w % ringCapacity] = v * 0.6
+            ring[w % ringCapacity] = v * gain
             writeIndex.store(w &+ 1)
             phase += 1
         }

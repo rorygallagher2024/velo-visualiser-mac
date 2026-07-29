@@ -45,8 +45,8 @@ enum SelfTest {
         // the failure "draws something" cannot: a scene that renders happily
         // and ignores the audio completely.
         guard let device = MTLCreateSystemDefaultDevice(),
-              let renderer = Renderer(device: device),
-              let quiet = Renderer(device: device)
+              let renderer = Renderer(device: device, beatBus: BeatBus()),
+              let quiet = Renderer(device: device, beatBus: BeatBus())
         else {
             print("[selftest] no Metal device")
             exit(1)

@@ -35,7 +35,7 @@ final class StarscapeScene: VeloScene {
     private var warpRate: Float = 0
     private var flash: Float = 0
     private var flashHue: Float = 0
-    private var lastBeatEnvelope: Float = 0
+    private var lastBeatCount = 0
 
     private let baseSpeed: Float = 0.06     // depth units per second
     private let bassBoost: Float = 0.28     // extra speed at full bass
@@ -52,14 +52,14 @@ final class StarscapeScene: VeloScene {
         // an ever-climbing float loses the precision the wrap depends on.
         travel = (travel + warpRate * dt).truncatingRemainder(dividingBy: 1)
 
-        // Beat flash: onset detected from the envelope rising sharply.
-        if energy.envelope > 0.2 && energy.envelope > lastBeatEnvelope + 0.08 {
+        let bus = BeatBus.current
+        if bus.beatCount != lastBeatCount {
+            lastBeatCount = bus.beatCount
             flash = 1
             flashHue = (flashHue + 0.37).truncatingRemainder(dividingBy: 1)
         } else {
             flash = max(flash - dt * flashFall, 0)
         }
-        lastBeatEnvelope = energy.envelope
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {

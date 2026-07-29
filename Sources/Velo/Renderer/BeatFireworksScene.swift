@@ -41,7 +41,7 @@ final class BeatFireworksScene: VeloScene {
 
     private var energy = BandEnergy()
     private var clock: Float = 0
-    private var lastBeat: Float = -1
+    private var lastBeatCount = 0
     private var rng = Rng(seed: 0xBEEF)
 
     private var particles: MTLBuffer?
@@ -58,8 +58,9 @@ final class BeatFireworksScene: VeloScene {
         energy.update(bands: audio.currentBands(), dt: dt)
         clock += dt
 
-        if energy.envelope > 0.22 && (clock - lastBeat) > 0.14 {
-            lastBeat = clock
+        let bus = BeatBus.current
+        if bus.beatCount != lastBeatCount {
+            lastBeatCount = bus.beatCount
             spawnBurst(energy: 0.85 + energy.low * 0.4)
         }
 

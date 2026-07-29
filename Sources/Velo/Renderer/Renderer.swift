@@ -54,6 +54,8 @@ final class Renderer: @unchecked Sendable {
         return 3
     }()
 
+    let beatBus: BeatBus
+
     private let device: MTLDevice
     private let queue: MTL4CommandQueue
     private let compiler: MTL4Compiler
@@ -93,7 +95,8 @@ final class Renderer: @unchecked Sendable {
 
     let stats = FrameStats()
 
-    init?(device: MTLDevice) {
+    init?(device: MTLDevice, beatBus: BeatBus = .shared) {
+        self.beatBus = beatBus
         guard let queue = device.makeMTL4CommandQueue() else { return nil }
         self.device = device
         self.queue = queue
@@ -255,6 +258,8 @@ final class Renderer: @unchecked Sendable {
         frameIndex &+= 1
 
         let scene = scenes[sceneIndex]
+        beatBus.update(audio: audio, dt: 1.0 / 60.0, time: time)
+        BeatBus.current = beatBus
         scene.update(audio: audio, dt: 1.0 / 60.0)
 
         var uniforms = Uniforms(
@@ -335,6 +340,8 @@ final class Renderer: @unchecked Sendable {
 
         let dt = lastTime < 0 ? 1.0 / 120.0 : min(max(time - lastTime, 0), 0.1)
         lastTime = time
+        beatBus.update(audio: audio, dt: dt, time: time)
+        BeatBus.current = beatBus
         let scene = scenes[sceneIndex]
         scene.update(audio: audio, dt: dt)
 

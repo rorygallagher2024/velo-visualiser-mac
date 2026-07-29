@@ -7,11 +7,8 @@ import Foundation
 /// controls the bloom intensity. Up to eight rings travel simultaneously,
 /// each launched at the moment its beat was detected.
 ///
-/// Beat detection is a simple onset gate on the band envelope: a spike above
-/// a threshold with a minimum cooldown between events. That is all the
-/// Android version does too (via BeatPulse/BeatDetector), and it is
-/// deliberately simple so it fires reliably on the downbeat rather than
-/// chasing ghost transients.
+/// Beat detection comes from the centralised `BeatBus` — the same signal
+/// that will drive lighting and haptics.
 final class BeatPulseScene: VeloScene {
 
     let name = "Beat Pulse"
@@ -22,10 +19,7 @@ final class BeatPulseScene: VeloScene {
     private let maxRings = 8
     private var beats: [Float]
     private var head = 0
-    private var lastBeatTime: Float = -1
-
-    private let threshold: Float = 0.2
-    private let cooldown: Float = 0.15
+    private var lastBeatCount = 0
 
     init() {
         beats = Array(repeating: -1, count: maxRings)
@@ -35,16 +29,17 @@ final class BeatPulseScene: VeloScene {
         energy.update(bands: audio.currentBands(), dt: dt)
         time += dt
 
-        if energy.envelope > threshold && (time - lastBeatTime) > cooldown {
+        let bus = BeatBus.current
+        if bus.beatCount != lastBeatCount {
+            lastBeatCount = bus.beatCount
             beats[head] = time
             head = (head + 1) % maxRings
-            lastBeatTime = time
         }
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
         let p = pointer.bindMemory(to: Float.self, capacity: 2 + maxRings)
-        p[0] = energy.envelope
+        p[0] = BeatBus.current.envelope
         p[1] = energy.low
         for i in 0..<maxRings { p[2 + i] = beats[i] }
     }
