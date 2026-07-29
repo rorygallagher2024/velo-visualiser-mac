@@ -6,6 +6,13 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var model: AppModel
 
+    /// Polled rather than pushed. The stats are written from the render thread
+    /// every frame, and driving SwiftUI at that rate would spend more time
+    /// laying out text than rendering. Four times a second is live enough to
+    /// watch and cheap enough to ignore.
+    @State private var stats: FrameStats?
+    private let tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             MetalCanvasView(
@@ -13,12 +20,28 @@ struct ContentView: View {
                 audio: model.audio,
                 onToggleMenu: { model.menuOpen.toggle() },
                 onToggleHDR: { model.hdrEnabled.toggle() },
+                onTogglePerf: { model.perfOverlay.toggle() },
+                onStats: { stats = $0 },
                 nativeInFullScreen: model.nativeInFullScreen,
                 frameCap: model.frameCap,
                 sceneIndex: model.sceneIndex,
                 onSceneChange: { model.sceneIndex = $0 }
             )
             .ignoresSafeArea()
+
+            if model.perfOverlay {
+                PerfOverlay(
+                    snapshot: model.perf,
+                    scene: SceneCatalog.names[model.sceneIndex],
+                    audio: model.audioStatus,
+                    hdr: model.hdrEnabled,
+                    framesInFlight: Renderer.maxFramesInFlight
+                )
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .transition(.opacity)
+                .allowsHitTesting(false)
+            }
 
             if model.menuOpen {
                 ControlPanel(model: model)
@@ -31,6 +54,12 @@ struct ContentView: View {
         }
         .background(.black)
         .animation(.easeOut(duration: 0.18), value: model.menuOpen)
+        .animation(.easeOut(duration: 0.18), value: model.perfOverlay)
+        .onReceive(tick) { _ in
+            guard model.perfOverlay else { return }
+            if let stats { model.perf = stats.snapshot }
+            model.audioStatus = model.audio.status()
+        }
     }
 }
 
@@ -40,8 +69,9 @@ private struct HintBar: View {
     @State private var visible = true
 
     var body: some View {
-        Text("M controls · F fullscreen · H HDR · 1-9 0 / ← → visual")
-            .font(.system(size: 11, weight: .regular, design: .default))
+        Text("M controls · F fullscreen · H HDR · P stats · 1-9 0 / ← → visual")
+            .font(Velo.light(11))
+            .tracking(0.4)
             .foregroundStyle(.white.opacity(0.35))
             .opacity(visible ? 1 : 0)
             .task {
@@ -62,6 +92,17 @@ private struct ControlPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            Text("VELO")
+                .font(Velo.display(22))
+                .tracking(5)
+                .foregroundStyle(.white.opacity(0.9))
+                .padding(.bottom, 2)
+            Text("Visualiser")
+                .font(Velo.light(11))
+                .tracking(2.2)
+                .foregroundStyle(.white.opacity(0.35))
+                .padding(.bottom, 16)
+
             section("Visual")
             VStack(alignment: .leading, spacing: 6) {
                 Picker("Visual", selection: $model.sceneIndex) {
@@ -130,9 +171,16 @@ private struct ControlPanel: View {
                         + "than the scaled desktop does, so only turn it on if it measures better.")
             }
 
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("Diagnostics overlay", isOn: $model.perfOverlay)
+                    .toggleStyle(.switch)
+                caption("Frame timing, the live visual and the audio input. Also on the "
+                        + "P key. It draws over the canvas, so it will appear in a capture.")
+            }
+
             Spacer(minLength: 0)
             Text("M close · F fullscreen · H HDR · ← → visual")
-                .font(.system(size: 10))
+                .font(Velo.label(10))
                 .foregroundStyle(.white.opacity(0.3))
         }
         .padding(20)
@@ -152,7 +200,8 @@ private struct ControlPanel: View {
 
     private func section(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 11, weight: .medium))
+            .font(Velo.display(12))
+            .tracking(1.6)
             .tracking(1.1)
             .foregroundStyle(.white.opacity(0.45))
     }
@@ -176,7 +225,7 @@ private struct ControlPanel: View {
 
     private func caption(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11))
+            .font(Velo.light(11))
             .foregroundStyle(.white.opacity(0.5))
             .fixedSize(horizontal: false, vertical: true)
     }

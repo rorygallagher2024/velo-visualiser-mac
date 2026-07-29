@@ -27,6 +27,48 @@ Sources/Velo/
 Adding a visual is one file plus one line in `SceneCatalog`. Ten of the twelve
 needed nothing else.
 
+## Typography
+
+Two families, shared with the Android app and bundled in `Resources/Fonts`
+rather than expected on the system. **Satoshi** is the working typeface for
+anything being read; **Clash Display** is the spectacle typeface and earns its
+place only at size, since its character is in wide apertures and tight joins
+that do not survive below about twenty points.
+
+Weights run light on purpose. On black, at size, a regular weight reads as heavy
+and a light weight reads as precise.
+
+Registration happens twice on purpose. `ATSApplicationFontsPath` in the plist
+covers a normally launched app, and `CTFontManagerRegisterFontURLs` covers a
+binary run straight from the build directory, which has no bundle resources to
+find. `Velo.custom` checks `NSFont(name:)` and falls back to the system face,
+because `Font.custom` substitutes something arbitrary for a name it cannot
+resolve and the failure is otherwise invisible.
+
+Live numbers are monospaced regardless of family. A proportional digit set makes
+a readout twitch sideways on every update, which is more distracting than the
+numbers.
+
+## The diagnostics overlay
+
+`P`, or the toggle in the controls. Off by default: the canvas is meant to be
+pure output and anything drawn over it lands in a capture.
+
+`FrameStats` always collects and only prints when `VELO_STATS` is set. Appending
+a few doubles per frame costs nothing next to a frame of rendering, and gating
+collection on the environment would mean the overlay had no numbers to show.
+
+It samples at 4 Hz for the overlay and reports at 0.5 Hz to stdout, from one set
+of buffers. SwiftUI polls the snapshot on a timer rather than being pushed from
+the render thread: driving a view hierarchy at 120 Hz spends more time laying
+out text than rendering.
+
+The fields are chosen to separate faults that look identical from outside. A low
+frame rate with the GPU idle is a stall, with the GPU busy it is fill cost, and
+the pixel count says which. Hitches separate one long freeze from a drizzle of
+short ones. The audio line exists because "not moving" and "not receiving
+anything" are the same picture.
+
 ## Verifying a visual
 
 `VELO_SELFTEST=1` renders every scene offscreen at a fixed 1920x1080 with a

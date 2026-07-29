@@ -123,10 +123,14 @@ final class MetalCanvasNSView: NSView {
     var audio: AudioEngine?
     var onToggleMenu: (() -> Void)?
     var onToggleHDR: (() -> Void)?
+    var onTogglePerf: (() -> Void)?
 
     /// Target frame rate; 0 is uncapped. Streams are usually 60, and there is
     /// no point rendering frames OBS will never sample.
     var frameCap: Double = 0 { didSet { loop?.frameCap = frameCap } }
+
+    /// Live frame timing, for the diagnostics overlay.
+    var stats: FrameStats? { renderer?.stats }
 
     /// Selected visual. Driven from the controls; the keys write back through
     /// `onSceneChange` so the picker and the canvas cannot disagree.
@@ -146,6 +150,7 @@ final class MetalCanvasNSView: NSView {
         case "f": toggleFullScreen()
         case "m": onToggleMenu?()
         case "h": onToggleHDR?()
+        case "p": onTogglePerf?()
         default:
             if let n = numberKey(in: event) {
                 changeScene(to: n - 1)
@@ -422,6 +427,10 @@ struct MetalCanvasView: NSViewRepresentable {
     var audio: AudioEngine
     var onToggleMenu: () -> Void
     var onToggleHDR: () -> Void
+    var onTogglePerf: () -> Void
+    /// Handed the live stats once the view exists, so the overlay can poll them
+    /// without the SwiftUI layer reaching into the renderer itself.
+    var onStats: (FrameStats) -> Void
     var nativeInFullScreen: Bool
     var frameCap: Double
     var sceneIndex: Int
@@ -433,6 +442,8 @@ struct MetalCanvasView: NSViewRepresentable {
         view.hdrEnabled = hdrEnabled
         view.onToggleMenu = onToggleMenu
         view.onToggleHDR = onToggleHDR
+        view.onTogglePerf = onTogglePerf
+        if let stats = view.stats { onStats(stats) }
         view.nativeInFullScreen = nativeInFullScreen
         view.frameCap = frameCap
         view.sceneIndex = sceneIndex
@@ -445,6 +456,7 @@ struct MetalCanvasView: NSViewRepresentable {
         nsView.audio = audio
         nsView.onToggleMenu = onToggleMenu
         nsView.onToggleHDR = onToggleHDR
+        nsView.onTogglePerf = onTogglePerf
         nsView.nativeInFullScreen = nativeInFullScreen
         nsView.frameCap = frameCap
         nsView.sceneIndex = sceneIndex

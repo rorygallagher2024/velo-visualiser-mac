@@ -4,6 +4,25 @@ import AudioToolbox
 import CoreAudio
 import Foundation
 
+/// What the capture side is doing, for the diagnostics overlay.
+///
+/// "The visual is not moving" and "the visual is not receiving anything" look
+/// identical on screen, and this is what tells them apart.
+struct AudioStatus: Sendable, Equatable {
+    var device = "no input"
+    var sampleRate: Double = 0
+    var channels = 0
+    var bufferFrames = 0
+    var level: Float = 0
+    var silent: Bool { level < 0.0005 }
+
+    var format: String {
+        sampleRate == 0
+            ? "not capturing"
+            : "\(Int(sampleRate)) Hz · \(channels) ch · \(bufferFrames) fr"
+    }
+}
+
 /// One selectable input. BlackHole, an interface, or the built-in mic all
 /// appear here identically — a loopback device is just an input device.
 struct AudioInputDevice: Identifiable, Hashable, Sendable {
@@ -68,6 +87,7 @@ final class AudioEngine: @unchecked Sendable {
     fileprivate var debugCounter = 0
     fileprivate var debugReadCounter = 0
     private var reportedOnce = Set<String>()
+    private var statusStorage = AudioStatus()
 
     init() {
         ring = UnsafeMutablePointer<Float>.allocate(capacity: ringCapacity)
@@ -330,8 +350,12 @@ final class AudioEngine: @unchecked Sendable {
             AudioComponentInstanceDispose(audioUnit)
             return
         }
+        let channels = Self.inputChannels(of: device.id)
+        statusStorage = AudioStatus(
+            device: device.name, sampleRate: deviceSampleRate,
+            channels: channels, bufferFrames: Int(frames))
         report("capturing \(device.name) — \(Int(deviceSampleRate)) Hz, "
-               + "\(Self.inputChannels(of: device.id)) ch in, \(frames) frame buffer")
+               + "\(channels) ch in, \(frames) frame buffer")
     }
 
     /// Input channels the device actually offers. Two is assumed everywhere
@@ -410,6 +434,22 @@ final class AudioEngine: @unchecked Sendable {
     /// Frames written since the engine started. A consumer that needs the
     /// stream rather than a snapshot holds one of these as a cursor.
     var framesWritten: Int { writeIndex.load() }
+
+    /// A description of the live capture, plus the peak of the recent window.
+    /// Peak rather than RMS, because the question this answers is "is anything
+    /// arriving at all", and RMS hides a sparse signal.
+    func status() -> AudioStatus {
+        var out = statusStorage
+        let w = writeIndex.load()
+        let n = min(2048, ringCapacity)
+        var peak: Float = 0
+        for i in 0..<n {
+            let v = abs(ring[(w &+ ringCapacity &- n &+ i) % ringCapacity])
+            if v > peak { peak = v }
+        }
+        out.level = min(peak, 1)
+        return out
+    }
 
     /// Copy every frame written since `cursor`, oldest first, and return how
     /// many were copied along with the cursor to pass next time.

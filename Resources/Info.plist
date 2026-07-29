@@ -29,5 +29,7 @@
     <string>Velo Visualiser reads a live audio input so it can draw the music. Choose BlackHole to visualise system audio, or your interface to take the mixer feed.</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+	<key>ATSApplicationFontsPath</key>
+	<string>Fonts</string>
 </dict>
 </plist>

@@ -393,40 +393,69 @@ final class FrameStats: @unchecked Sendable {
     private var lastReport: Double = CACurrentMediaTime()
     private var pixels = 0
 
-    var enabled = ProcessInfo.processInfo.environment["VELO_STATS"] != nil
+    /// Printing to stdout is opt-in. COLLECTING is not: the overlay needs the
+    /// numbers, and appending a few doubles per frame costs nothing next to a
+    /// frame of rendering.
+    var printing = ProcessInfo.processInfo.environment["VELO_STATS"] != nil
+
+    private var current = PerfSnapshot()
+    private var lastSample: Double = CACurrentMediaTime()
+
+    /// The most recent reading. Safe to poll from any thread.
+    var snapshot: PerfSnapshot {
+        lock.lock(); defer { lock.unlock() }; return current
+    }
 
     func recordDropped() {
-        guard enabled else { return }
         lock.lock(); dropped += 1; lock.unlock()
+    }
+
+    private func mean(_ v: [Double]) -> Double {
+        v.isEmpty ? 0 : v.reduce(0, +) / Double(v.count)
     }
 
     /// The display link's OWN expected frame duration. If this reads 8.3 ms
     /// the panel is at 120 Hz and we are missing callbacks; if it reads 12.5 ms
     /// the system is simply calling us at 80 Hz. Those need opposite fixes.
     func recordLinkInterval(_ seconds: Double) {
-        guard enabled else { return }
         lock.lock(); linkInterval = seconds; lock.unlock()
     }
 
     func recordWaits(semaphore: Double, drawable: Double) {
-        guard enabled else { return }
         lock.lock(); semWaits.append(semaphore); drawWaits.append(drawable); lock.unlock()
     }
 
     func recordGPU(_ seconds: Double) {
-        guard enabled else { return }
         lock.lock(); gpuTimes.append(seconds); lock.unlock()
     }
 
     func recordFrame(encode: Double, size: Int) {
-        guard enabled else { return }
         let now = CACurrentMediaTime()
         lock.lock()
         if lastFrame > 0 { intervals.append(now - lastFrame) }
         lastFrame = now
         encodes.append(encode)
         pixels = size
+        // Two cadences from one set of buffers. The overlay wants to feel
+        // live, and a log line every quarter second is unreadable.
+        let sampling = now - lastSample >= 0.25
         let due = now - lastReport >= 2.0
+        if sampling {
+            lastSample = now
+            if !intervals.isEmpty {
+                current = PerfSnapshot(
+                    fps: 1.0 / (intervals.reduce(0, +) / Double(intervals.count)),
+                    worstMs: (intervals.max() ?? 0) * 1000,
+                    gpuMs: mean(gpuTimes) * 1000,
+                    encodeMs: mean(encodes) * 1000,
+                    waitDrawableMs: mean(drawWaits) * 1000,
+                    waitSemaphoreMs: mean(semWaits) * 1000,
+                    dropped: dropped,
+                    hitches: intervals.filter { $0 > 0.05 }.count,
+                    pixels: size
+                )
+            }
+        }
         if due { lastReport = now }
         let snapshotIntervals = due ? intervals : []
         let snapshotEncodes = due ? encodes : []
@@ -446,7 +475,7 @@ final class FrameStats: @unchecked Sendable {
         }
         lock.unlock()
 
-        guard due, !snapshotIntervals.isEmpty else { return }
+        guard printing, due, !snapshotIntervals.isEmpty else { return }
         // Formatting and writing on the render thread perturbs the very timing
         // being measured — it showed up as a ~260 ms hitch once per reporting
         // period. Hand it to a background queue.

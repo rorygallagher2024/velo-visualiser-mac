@@ -24,6 +24,12 @@ struct VeloApp: App {
 @Observable
 final class AppModel {
     var menuOpen = false
+    /// Diagnostics overlay. Off by default: the canvas is meant to be pure
+    /// output, and anything drawn over it lands in whatever captures the window.
+    var perfOverlay = ProcessInfo.processInfo.environment["VELO_PERF"] != nil
+    /// Polled from the render thread's stats at 4 Hz.
+    var perf = PerfSnapshot()
+    var audioStatus = AudioStatus()
     var sceneIndex = 0
     /// `VELO_HDR=1` starts in extended range, so the path can be exercised
     /// without driving the UI.

@@ -48,6 +48,8 @@ layers in the way.
   sample.
 * **Fullscreen That Actually Runs Fullscreen:** A borderless window at exactly
   the screen frame, holding 119 fps at 8.4 megapixels with no stalls.
+* **Diagnostics Overlay:** Frame timing, GPU time, the live visual and the
+  audio input, on a key. Off by default, since it draws over the canvas.
 * **No Nonsense:** 100% local processing. No data collection. No ads. No network
   access at all.
 
@@ -102,6 +104,7 @@ The canvas carries no on screen controls, so everything is a key.
 | `M` | show or hide the controls |
 | `F` | fullscreen |
 | `H` | HDR on or off |
+| `P` | diagnostics overlay |
 | `1` to `9`, `0` | jump to a visual |
 | `left` `right` | step through the visuals |
 
