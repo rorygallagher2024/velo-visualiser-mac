@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Velo Visualiser</string>
+    <key>CFBundleDisplayName</key>
+    <string>Velo Visualiser</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.lowlatency.velo</string>
+    <key>CFBundleExecutable</key>
+    <string>Velo</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>26.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <!-- Core Audio input goes through the microphone TCC gate even when the
+         device is a loopback like BlackHole, so this string is required or the
+         app is denied silently. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Velo Visualiser reads a live audio input so it can draw the music. Choose BlackHole to visualise system audio, or your interface to take the mixer feed.</string>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+</dict>
+</plist>

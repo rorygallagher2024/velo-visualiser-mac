@@ -1,0 +1,9 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="512" height="512">
+  <title>Velo App Icon</title>
+  <desc>A precise monochrome V chevron.</desc>
+  <defs><clipPath id="r"><rect width="512" height="512" rx="114" ry="114"/></clipPath></defs>
+  <g clip-path="url(#r)">
+    <rect width="512" height="512" fill="#101010"/>
+    <path d="M 150.0 156.0 L 256.0 359.5 L 362.0 156.0" fill="none" stroke="#F4F4F2" stroke-width="44.1" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
