@@ -42,13 +42,14 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Sixteen Visuals:** Eleven instruments and five generative scenes.
+* **Seventeen Visuals:** Eleven instruments and six generative scenes.
 * **Built to be Captured:** No on screen chrome, keyboard only control, and a
   frame rate cap so you are not rendering frames a 60 fps stream will never
   sample.
 * **Fullscreen That Actually Runs Fullscreen:** A borderless window at exactly
   the screen frame, holding 119 fps at 8.4 megapixels with no stalls. A macOS
-  fullscreen Space is available as a setting, and is slower.
+  fullscreen Space is also available via the green window button and now holds
+  the full 120Hz refresh rate natively.
 * **Asks the Display for its Full Rate:** ProMotion panels are adaptive and
   will happily drop to 40 Hz if nothing says otherwise. The app states the rate
   it wants and shows what the panel actually gives.
@@ -98,6 +99,8 @@ staging of the same data.
 * **Aurora Drift.** Curtains of light over a parallax starfield.
 * **Quicksilver.** A mass of liquid metal, raymarched, reflecting a room that is
   also the background.
+* **Nebula.** A volumetric liquid nebula field with audio-reactive FBM turbulence,
+  colour shifts, and a twinkling starfield.
 
 ## Controls
 

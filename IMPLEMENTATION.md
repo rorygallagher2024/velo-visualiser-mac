@@ -11,7 +11,6 @@ Sources/Velo/
   VeloApp.swift            SwiftUI app and app model
   ContentView.swift        window and control panel
   MetalCanvasView.swift    CAMetalLayer view, render thread, fullscreen, EDR
-  DisplayMode.swift        native resolution switching for fullscreen
   Diagnostics.swift        the log at ~/Library/Logs/Velo.log
   Renderer/
     Renderer.swift         Metal 4 queue, allocators, argument tables, pacing
@@ -130,6 +129,7 @@ At 1920x1080, 2.1 Mpx. Fragment cost scales with pixels, so multiply by about
 | Phosphor Scope | 0.66 ms | 6% | 0.009 |
 | Spectral Bloom | 0.81 ms | 100% | 0.202 |
 | Aurora Drift | 1.49 ms | 100% | 0.491 |
+| Nebula | 1.62 ms | 100% | 0.395 |
 | Quicksilver | 1.82 ms | 100% | 0.118 |
 
 Extrapolated to 5K fullscreen the heaviest is around 13 ms, against 8.3 ms at
@@ -319,10 +319,10 @@ via `requestDrawableSize`.
 
 ### Do not claim the display mode
 
-There is a setting to switch the display to the panel's native mode while
-fullscreen. **It is off by default and should stay off.**
+There used to be a setting to switch the display to the panel's native mode while
+fullscreen. **It was removed entirely.**
 
-It was added earlier to recover frame rate on a scaled desktop, on a
+It was added early on to recover frame rate on a scaled desktop, on a
 measurement of 80 fps against 120. Measured again later, against itself,
 fullscreen, same machine:
 
@@ -331,17 +331,14 @@ with the claim:     88-103 fps, 1-2 stalls per 2 s, worst ~270 ms, 5.9 Mpx
 without the claim:  118-119 fps, no stalls,         worst ~25 ms,  8.4 Mpx
 ```
 
-Slower while drawing 40 percent MORE pixels. Switching the mode leaves the
-compositor doing periodic work that stalls the render thread for about 270 ms
-once or twice a second, and the stall outlives fullscreen because the restore
-does the same thing again.
+Slower while drawing 40 percent MORE pixels. Switching the mode left the
+compositor doing periodic work that stalled the render thread for about 270 ms
+once or twice a second, and the stall outlived fullscreen because the restore
+did the same thing again. Not only was it slower, it also caused crashes and UI 
+shifting on some systems.
 
-That periodic stall is the one noted as unexplained early in this project. It
-was never mysterious; it was self-inflicted.
-
-The earlier 80-against-120 result is not reproducible now. It may have been
-confounded: several measurements from that period were taken from a live window
-that was being resized, which changes the pixel count under the measurement.
+That periodic stall was the one noted as unexplained early in this project. It
+was never mysterious; it was self-inflicted, and the toggle is now gone.
 
 ### Fullscreen resize churn
 
@@ -515,5 +512,5 @@ VELO_SELFTEST=1     # render every visual offscreen, check pixels, exit
   alpha, and OBS ships the client source already. The pipeline is arranged so
   the final frame lands in a texture that can be published directly.
 * **Render scale control.** Needed before the heavy scenes run at 5K.
-* **Scene categories.** Twelve visuals and ten digit keys. Android solved this
+* **Scene categories.** Seventeen visuals and ten digit keys. Android solved this
   with Instruments / Reactive / Immersive filters.
