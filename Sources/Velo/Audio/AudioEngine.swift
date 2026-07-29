@@ -407,6 +407,25 @@ final class AudioEngine: @unchecked Sendable {
 
     var sampleRate: Double { deviceSampleRate }
 
+    /// Fill the ring with broadband synthetic signal, for `SelfTest`.
+    ///
+    /// A sum of tones across the spectrum rather than one sine, so every band
+    /// and every bin has something in it. Without this a self test cannot tell
+    /// a broken visual from a quiet room, which is the entire difficulty.
+    func injectTestSignal() {
+        var phase = Float(writeIndex.load())
+        for _ in 0..<1024 {
+            var v: Float = 0
+            for harmonic in [1, 3, 7, 17, 41, 97] {
+                v += sinf(phase * 0.0013 * Float(harmonic)) / Float(harmonic)
+            }
+            let w = writeIndex.load()
+            ring[w % ringCapacity] = v * 0.6
+            writeIndex.store(w &+ 1)
+            phase += 1
+        }
+    }
+
     // MARK: - Analysis
 
     /// Copy the newest `count` samples, oldest first, into a caller-owned

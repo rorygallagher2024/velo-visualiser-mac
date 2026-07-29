@@ -46,6 +46,13 @@ final class Renderer: @unchecked Sendable {
     private var library: MTLLibrary?
     private var pixelFormat: MTLPixelFormat = .bgra8Unorm
 
+    /// Metal 4 makes residency the app's job. A buffer that is not in a
+    /// residency set attached to the queue reads as zeros on the GPU, with no
+    /// error and no validation complaint. The small per-frame buffers happened
+    /// to work without one, which is luck rather than correctness, and the
+    /// first larger buffer a scene allocated came back empty.
+    private var residencySet: MTLResidencySet?
+
     private var uniformBuffers: [MTLBuffer] = []
     private var bandBuffers: [MTLBuffer] = []
     private let frameSemaphore = DispatchSemaphore(value: maxFramesInFlight)
@@ -103,6 +110,19 @@ final class Renderer: @unchecked Sendable {
         }
 
         scenes.forEach { $0.prepare(device: device) }
+
+        // Everything the shaders will ever read, made resident once. Scenes
+        // allocate in prepare(), so this has to come after them.
+        if let set = try? device.makeResidencySet(descriptor: MTLResidencySetDescriptor()) {
+            uniformBuffers.forEach { set.addAllocation($0) }
+            bandBuffers.forEach { set.addAllocation($0) }
+            scenes.compactMap(\.historyBuffer).forEach { set.addAllocation($0) }
+            set.commit()
+            set.requestResidency()
+            queue.addResidencySet(set)
+            residencySet = set
+        }
+
         guard buildPipeline(for: .bgra8Unorm) else { return nil }
     }
 
@@ -163,6 +183,63 @@ final class Renderer: @unchecked Sendable {
         pipeline = state
         pixelFormat = format
         return true
+    }
+
+    /// Draw one frame into a texture and wait for it. For `SelfTest` only:
+    /// same encode path as `render`, minus the drawable and the pacing.
+    @discardableResult
+    func renderOffscreen(into target: MTLTexture, audio: AudioEngine, time: Float) -> Double {
+        guard buildPipeline(for: target.pixelFormat), let pipeline else { return 0 }
+        let slot = frameIndex % Self.maxFramesInFlight
+        frameIndex &+= 1
+
+        let scene = scenes[sceneIndex]
+        scene.update(audio: audio, dt: 1.0 / 60.0)
+
+        var uniforms = Uniforms(
+            resolution: SIMD2(Float(target.width), Float(target.height)),
+            time: time, dim: 1)
+        uniformBuffers[slot].contents()
+            .copyMemory(from: &uniforms, byteCount: MemoryLayout<Uniforms>.stride)
+        scene.writeData(into: bandBuffers[slot].contents())
+
+        let allocator = allocators[slot]
+        let commandBuffer = commandBuffers[slot]
+        allocator.reset()
+        commandBuffer.beginCommandBuffer(allocator: allocator)
+
+        let pass = MTL4RenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+
+        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+            encoder.setRenderPipelineState(pipeline)
+            argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+            argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+            if let history = scene.historyBuffer {
+                argumentTable.setAddress(history.gpuAddress, index: 2)
+            }
+            encoder.setArgumentTable(argumentTable, stages: .fragment)
+            encoder.setArgumentTable(argumentTable, stages: .vertex)
+            encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
+            encoder.endEncoding()
+        }
+        commandBuffer.endCommandBuffer()
+
+        // Metal's own timestamps, so the figure is GPU execution and not our
+        // wait for it.
+        let done = DispatchSemaphore(value: 0)
+        let elapsed = TimingBox()
+        let options = MTL4CommitOptions()
+        options.addFeedbackHandler { feedback in
+            elapsed.seconds = feedback.gpuEndTime - feedback.gpuStartTime
+            done.signal()
+        }
+        queue.commit([commandBuffer], options: options)
+        done.wait()
+        return elapsed.seconds
     }
 
     func render(layer: CAMetalLayer, audio: AudioEngine, time: Float) {
@@ -256,6 +333,13 @@ final class Renderer: @unchecked Sendable {
             size: drawable.texture.width * drawable.texture.height
         )
     }
+}
+
+/// Carries one GPU timing out of the feedback handler. The handler is
+/// `@Sendable`, and the caller is blocked on the semaphore until it fires, so
+/// the two never touch this at the same time.
+private final class TimingBox: @unchecked Sendable {
+    var seconds: Double = 0
 }
 
 /// Frame timing, summarised to stdout.

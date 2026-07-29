@@ -27,34 +27,68 @@ Sources/Velo/
 Adding a visual is one file plus one line in `SceneCatalog`. Ten of the twelve
 needed nothing else.
 
+## Verifying a visual
+
+`VELO_SELFTEST=1` renders every scene offscreen at a fixed 1920x1080 with a
+known broadband signal in the ring, reads the pixels back, and reports what is
+actually on them.
+
+This exists because the previous check did not. Confirming that a shader
+compiles and that the frame rate holds proves nothing about whether anything
+was drawn: a scene that outputs pure black passes both, at an excellent frame
+rate. One shipped that way, and the user found it rather than the check.
+
+It cannot tell you a visual is ugly or subtly wrong. It can tell you it is
+empty, which is the failure that had been slipping through.
+
 ## Measured cost
 
-Per scene, at 8.1 megapixels, 120 Hz cap, on an M4 Pro MacBook Pro. The budget is
-8.3 ms.
+From the self test, so the resolution is fixed and stated. **Measure GPU cost
+this way, not from a running window.** The earlier table in this file was taken
+from `VELO_STATS` on a live window and was nonsense: the window got resized
+mid-run, so the top of the table was measured at 8.1 Mpx and the bottom at
+1.7 Mpx. `VELO_STATS` prints the pixel count on every line and it was ignored.
+There was no thermal effect, which is what the note here used to claim.
 
-**Treat this as a ranking, not as constants.** The same scene measured 4.3 ms on
-a warm machine with other work running and 1.0 ms on a cold one. What holds
-across runs is the order and the rough grouping.
+At 1920x1080, 2.1 Mpx. Fragment cost scales with pixels, so multiply by about
+3.9 for 8.1 Mpx and about 7 for 5K.
 
-| Visual | GPU (cold) |
-|--------|-----|
-| Spectrum Bars | 0.2 ms |
-| Circular Spectrum | 0.3 ms |
-| Spectrogram | 0.2 ms |
-| Pocket LED | 0.4 ms |
-| Laser Array | 0.4 ms |
-| Tunnel | 0.5 ms |
-| Phosphor Scope | 1.0 ms |
-| Spectrum Analyser | 1.4 ms |
-| Raw Oscilloscope | 1.5 ms |
-| 3D LED | 1.6 ms |
-| Spectral Bloom | 3.6 ms |
-| Aurora Drift | 4.8 ms |
-| Quicksilver | 5.4 ms |
+| Visual | GPU | Lit |
+|--------|-----|-----|
+| Spectrum Bars | 0.08 ms | 37% |
+| Spectrogram | 0.08 ms | 5% |
+| Circular Spectrum | 0.10 ms | 12% |
+| Pocket LED | 0.10 ms | 47% |
+| Tunnel | 0.13 ms | 2% |
+| Laser Array | 0.13 ms | 100% |
+| Spectrum Analyser | 0.42 ms | 23% |
+| Raw Oscilloscope | 0.52 ms | 0.1% |
+| 3D LED | 0.55 ms | 37% |
+| Spectral Bloom | 0.85 ms | 100% |
+| Phosphor Scope | 0.96 ms | 6% |
+| Aurora Drift | 1.57 ms | 100% |
+| Quicksilver | 1.84 ms | 100% |
 
-The heavy three are comfortable at 8.1 Mpx and will not be at 5K fullscreen,
-which is 14.7 Mpx, roughly 1.8x the pixels. A render scale control is the fix
-when that day comes; `requestDrawableSize` already exists for it.
+Extrapolated to 5K fullscreen the heaviest is around 13 ms, against 8.3 ms at
+120 Hz. A render scale control is the fix when that day comes;
+`requestDrawableSize` already exists for it.
+
+## Residency
+
+**Metal 4 makes residency the app's job.** A buffer that is not in an
+`MTLResidencySet` attached to the queue reads as zeros on the GPU. No error, no
+validation warning, no clue.
+
+The small per-frame buffers worked without one, which was luck rather than
+correctness. The first larger buffer a scene allocated came back empty and the
+scene rendered pure black. The renderer now builds one residency set covering
+every buffer the shaders can read, after `prepare()` so scene allocations are
+included.
+
+Diagnosing this from the shader side is quick with the self test: probe one
+quantity at a time by returning white where it is non-zero. `s.cols`, `s.write`
+and the computed indices all came back white; the buffer read came back black,
+which separates "wrong index" from "no data" in one run.
 
 ## Scene owned history
 
@@ -242,6 +276,7 @@ VELO_SCENE=n        # start on a given visual, zero indexed
 VELO_CAP=n          # start at a given frame cap
 VELO_FULLSCREEN=1   # start fullscreen
 VELO_SCALE=n        # drawable scale
+VELO_SELFTEST=1     # render every visual offscreen, check pixels, exit
 ```
 
 ## Not done

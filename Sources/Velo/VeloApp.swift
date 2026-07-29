@@ -43,6 +43,7 @@ final class AppModel {
     let audio = AudioEngine()
 
     init() {
+        if ProcessInfo.processInfo.environment["VELO_SELFTEST"] != nil { SelfTest.run() }
         VeloLog.begin()
         audio.start()
     }
