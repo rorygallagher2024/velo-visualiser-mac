@@ -14,7 +14,7 @@ display pipeline that no app can skip, reaching your eyes in roughly
 
 It is the Mac sibling of the Android
 [Velo Visualiser](https://github.com/rorygallagher2024/velo-visualiser/) and
-shares its design language and its visuals, but not a line of its code. This one
+shares its design language and its visuals. This one
 is Swift and Metal 4 throughout, Apple Silicon only, with no compatibility
 layers in the way.
 
@@ -42,20 +42,10 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Twenty-Seven Visuals:** Eleven instruments and sixteen generative scenes.
-* **Built to be Captured:** No on screen chrome, keyboard only control, and a
-  frame rate cap so you are not rendering frames a 60 fps stream will never
-  sample.
-* **Fullscreen That Actually Runs Fullscreen:** A borderless window at exactly
-  the screen frame, holding 119 fps at 8.4 megapixels with no stalls. A macOS
-  fullscreen Space is also available via the green window button and now holds
-  the full 120Hz refresh rate natively.
-* **Asks the Display for its Full Rate:** ProMotion panels are adaptive and
-  will happily drop to 40 Hz if nothing says otherwise. The app states the rate
-  it wants and shows what the panel actually gives.
+* **Twenty-Seven Visuals:**
 * **Diagnostics Overlay:** Frame timing, GPU time, the live visual and the
   audio input, on a key. Off by default, since it draws over the canvas.
-* **No Nonsense:** 100% local processing. No data collection. No ads. No network
+* **No Nonsense:** 100% local processing. No data collection. No ads. No cloud
   access at all.
 
 ## The visuals
@@ -85,9 +75,6 @@ layers in the way.
   camera. The music flows toward you.
 * **Waveform 3D Void.** The same corridor with the lights off. No air, no floor
   grid, no ambience: just the curtains and their reflection on pure black.
-
-All are ported from the Android app except Waveform 3D Void, which is a Mac
-staging of the same data.
 
 **Generative**, which are driven by the sound rather than measuring it:
 
@@ -168,9 +155,7 @@ engine and then again by the scene.
 
 ## Requirements
 
-Apple Silicon and macOS 26 or newer, deliberately. There is no Intel path and no
-Metal 3 fallback. The point of this app is to sit on the current graphics stack
-rather than carry compatibility code nobody on the project will run.
+Apple Silicon and macOS 26 or newer.
 
 ## Building from Source
 
