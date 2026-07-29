@@ -21,9 +21,7 @@ struct ContentView: View {
                 onToggleHDR: { model.hdrEnabled.toggle() },
                 onTogglePerf: { model.perfOverlay.toggle() },
                 onStats: { model.statsBox.stats = $0 },
-                nativeInFullScreen: model.nativeInFullScreen,
                 frameCap: model.frameCap,
-                borderlessFullScreen: model.borderlessFullScreen,
                 sceneIndex: model.sceneIndex,
                 onSceneChange: { model.sceneIndex = $0 }
             )
@@ -174,21 +172,6 @@ private struct ControlPanel: View {
                 caption("Applies in windowed and fullscreen alike. A 60 fps "
                         + "stream gains nothing from rendering faster, and the "
                         + "headroom keeps the machine cool and quiet.")
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Toggle("Native resolution in fullscreen", isOn: $model.nativeInFullScreen)
-                    .toggleStyle(.switch)
-                caption("Off by default. Switching the display mode costs more frame rate "
-                        + "than the scaled desktop does, so only turn it on if it measures better.")
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Toggle("Borderless fullscreen", isOn: $model.borderlessFullScreen)
-                    .toggleStyle(.switch)
-                caption("A window covering the screen rather than a macOS fullscreen "
-                        + "Space. Measured faster here, 119 fps against 80. Turn it off "
-                        + "if a Space performs better on your display.")
             }
 
             VStack(alignment: .leading, spacing: 6) {

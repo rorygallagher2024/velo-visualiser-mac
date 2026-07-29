@@ -47,31 +47,7 @@ final class AppModel {
     /// `VELO_HDR=1` starts in extended range, so the path can be exercised
     /// without driving the UI.
     var hdrEnabled = ProcessInfo.processInfo.environment["VELO_HDR"] != nil
-    /// Claim the panel's native resolution while fullscreen.
-    ///
-    /// OFF by default, which reverses an earlier decision. Claiming the mode
-    /// was added to recover frame rate on a scaled desktop, and measured
-    /// against itself it now does the opposite: switching the mode leaves the
-    /// compositor doing periodic work that stalls the render thread for about
-    /// 270 ms once or twice a second.
-    ///
-    ///     with the claim:     88-103 fps, 1-2 stalls per 2 s, 5.9 Mpx
-    ///     without the claim:  118-119 fps, no stalls,         8.4 Mpx
-    ///
-    /// Slower while drawing 40 percent MORE pixels, which is as clear as a
-    /// result gets. Left as a toggle because a different panel may behave
-    /// differently, but nothing should opt into it without measuring first.
-    /// `false` uses a macOS fullscreen Space, `true` a borderless window at
-    /// the screen frame. Measured on an M4 Pro, 8.1 megapixels:
-    ///
-    ///     borderless window:   119.5 fps
-    ///     fullscreen Space:     80.0 fps
-    ///
-    /// The Space is the correct thing to want and should be the faster one,
-    /// since it can be scanned out directly. It is not, and I could not find
-    /// what makes it ineligible.
-    var borderlessFullScreen = ProcessInfo.processInfo.environment["VELO_SPACE"] == nil
-    var nativeInFullScreen = ProcessInfo.processInfo.environment["VELO_NATIVE"] != nil
+
     /// 0 means uncapped (present every vsync).
     var frameCap: Double = {
         if let c = ProcessInfo.processInfo.environment["VELO_CAP"], let v = Double(c) {

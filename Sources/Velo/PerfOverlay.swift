@@ -64,10 +64,7 @@ struct PerfOverlay: View {
                 Text("FPS").font(label).foregroundStyle(.white.opacity(0.35))
                     .tracking(1.4)
                 Spacer(minLength: 12)
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(megapixels).font(label).foregroundStyle(.white.opacity(0.35))
-                    Text(displayRate).font(label).foregroundStyle(displayColour)
-                }
+                Text(megapixels).font(label).foregroundStyle(.white.opacity(0.35))
             }
             .padding(.bottom, 8)
 
@@ -87,6 +84,7 @@ struct PerfOverlay: View {
             row("visual", scene, mono: false)
             row("buffers", "\(framesInFlight) in flight")
             row("range", hdr ? "HDR" : "SDR")
+            row("refresh", displayRate, warn: snapshot.displayHz > 0 && snapshot.displayHz < 100)
 
             divider()
             row("input", audio.device, mono: false)
@@ -112,19 +110,9 @@ struct PerfOverlay: View {
         return Color(red: 1.0, green: 0.45, blue: 0.40)
     }
 
-    /// The panel's measured refresh, and whether we are getting all of it.
+    /// The panel's measured refresh rate.
     private var displayRate: String {
-        snapshot.displayHz == 0 ? "" : String(format: "%.0f Hz panel", snapshot.displayHz)
-    }
-
-    /// Amber when the panel itself has throttled well below what the app is
-    /// asking for, which is a completely different fault from the app being
-    /// slow and used to be indistinguishable from it.
-    private var displayColour: Color {
-        guard snapshot.displayHz > 0 else { return .white.opacity(0.35) }
-        return snapshot.displayHz < 100
-            ? Color(red: 1.0, green: 0.75, blue: 0.35)
-            : .white.opacity(0.35)
+        snapshot.displayHz == 0 ? "" : String(format: "%.0f Hz", snapshot.displayHz)
     }
 
     private var megapixels: String {

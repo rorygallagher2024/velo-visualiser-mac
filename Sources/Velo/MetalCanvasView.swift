@@ -128,8 +128,6 @@ final class MetalCanvasNSView: NSView {
     /// tone-mapped SDR, so this is for direct viewing.
     var hdrEnabled: Bool = false { didSet { applyColorConfiguration() } }
 
-    /// Whether fullscreen should claim the panel's native resolution.
-    var nativeInFullScreen: Bool = true
 
     /// The live audio source. Scenes pull whatever they need from it — bands
     /// for the analyser, raw samples for the scope — so nothing has to be
@@ -150,6 +148,7 @@ final class MetalCanvasNSView: NSView {
 
     /// Live frame timing, for the diagnostics overlay.
     var stats: FrameStats? { renderer?.stats }
+
 
     /// Ask the display for the rate we intend to render at, and keep asking:
     /// the panel's own maximum changes when the window moves between screens,
@@ -241,6 +240,10 @@ final class MetalCanvasNSView: NSView {
         metalLayer.maximumDrawableCount = Renderer.maxFramesInFlight
         metalLayer.isOpaque = true
         metalLayer.presentsWithTransaction = false
+        // Enabled by default for windowed mode, where it gives precise vsync
+        // pacing. Disabled when entering a fullscreen Space — see
+        // fullScreenDidChange() for why.
+        metalLayer.displaySyncEnabled = true
         applyColorConfiguration()
         renderer = Renderer(device: device)
     }
@@ -300,6 +303,9 @@ final class MetalCanvasNSView: NSView {
         displayLink?.invalidate()
         displayLink = nil
         lastLinkTime = 0
+        // Remove observers from the previous window BEFORE registering new ones.
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
         if let window {
             for name in [NSWindow.didEnterFullScreenNotification,
                          NSWindow.didExitFullScreenNotification] {
@@ -314,8 +320,6 @@ final class MetalCanvasNSView: NSView {
             requestRefreshRate()
             link.add(to: .main, forMode: .common)
         }
-        observers.forEach(NotificationCenter.default.removeObserver)
-        observers.removeAll()
 
         guard window != nil, let renderer, let audio else { return }
         let loop = RenderLoop(renderer: renderer, layer: metalLayer, audio: audio)
@@ -338,101 +342,47 @@ final class MetalCanvasNSView: NSView {
 
     // MARK: - Fullscreen
     //
-    // Deliberately NOT AppKit's native fullscreen. That path animates into its
-    // own Space and decides the window frame itself, and it left the canvas
-    // 33 pt short of the screen — the menu-bar strip stayed uncovered, which
-    // both looks wrong and costs the fast presentation path (measured: 80 fps
-    // with a gap, 120 fps covering the screen). Taking a borderless window at
-    // exactly the screen frame is what games do, and it is deterministic.
+    // Native macOS fullscreen (a Space). `displaySyncEnabled` is toggled off
+    // on entry to bypass the window server's VRR throttle, and back on when
+    // returning to windowed mode for precise vsync pacing.
 
     var isFullScreen: Bool {
-        savedFrame != nil || (window?.styleMask.contains(.fullScreen) ?? false)
+        window?.styleMask.contains(.fullScreen) ?? false
     }
-
-    /// Native fullscreen, not a borderless window at the screen frame.
-    ///
-    /// This was the other way round, on the reasoning that a borderless window
-    /// is what games do and is deterministic. It is deterministic, and it is
-    /// also still an ORDINARY COMPOSITED WINDOW as far as the system is
-    /// concerned. Covering the screen is not the same as owning it: the window
-    /// does not get the direct path, and on an adaptive panel the compositor
-    /// stays free to decide the content does not warrant the full refresh rate.
-    /// That is how the app ended up pinned at exactly 40 Hz, which is 120
-    /// divided by three.
-    ///
-    /// Native fullscreen puts the window in a Space of its own, where it is the
-    /// only thing on the display and can be scanned out directly.
-    ///
-    /// The objection that sent this the other way is real but fixable, and was
-    /// the whole of the complaint: without `fullSizeContentView` the content
-    /// view is inset by the titlebar, which left the canvas 33 points short.
-    /// `true` uses a borderless window at the screen frame instead of a Space.
-    /// Which kind of fullscreen `F` gives.
-    ///
-    /// Defaults to the borderless window, which is not the "proper" answer and
-    /// is measurably the faster one on this hardware. See `IMPLEMENTATION.md`.
-    var borderlessFullScreen = true
-    private var savedFrame: NSRect?
 
     func toggleFullScreen() {
         guard let window else { return }
-        if borderlessFullScreen { toggleBorderless(window); return }
         // Activate first. A fullscreen Space belonging to an application the
         // system does not consider active is throttled hard, and the app is
         // frequently not active at the moment the key is pressed.
         NSApp.activate()
+        // Remove None before inserting Primary. They are mutually exclusive,
+        // and a SwiftUI window can carry None, in which case inserting Primary
+        // alongside it leaves fullscreen disallowed and `toggleFullScreen`
+        // silently does nothing.
+        window.collectionBehavior.remove(.fullScreenNone)
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         window.toggleFullScreen(nil)
     }
 
-    /// A borderless window at exactly the screen frame. Not a Space, so it
-    /// stays an ordinary composited window, which on this hardware is FASTER
-    /// than the direct path even though it should not be. Kept as an option
-    /// because that result is machine-specific and the direct path is the
-    /// correct thing to want.
-    private func toggleBorderless(_ window: NSWindow) {
-        if let frame = savedFrame {
-            savedFrame = nil
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.level = .normal
-            NSApp.presentationOptions = []
-            DisplayMode.restore()
-            DispatchQueue.main.async {
-                DispatchQueue.main.async { [weak self] in
-                    window.setFrame(frame, display: true)
-                    window.makeFirstResponder(self)
-                }
-            }
-            return
-        }
-        savedFrame = window.frame
-        NSApp.activate()
-        NSApp.presentationOptions = [.hideDock, .hideMenuBar]
-        window.styleMask = [.borderless]
-        window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let screen = window.screen ?? NSScreen.main else { return }
-            window.setFrame(screen.frame, display: true)
-            window.makeKeyAndOrderFront(nil)
-            window.makeFirstResponder(self)
-            self.requestRefreshRate()
-        }
-    }
-
-    /// AppKit owns the transition now, so anything that has to be true in
-    /// fullscreen is applied when it reports the change rather than around a
-    /// frame the app set itself.
+    /// AppKit owns the transition, so post-transition state is applied here
+    /// rather than around the frame the app set.
     @objc func fullScreenDidChange() {
         guard let window else { return }
-        if isFullScreen, nativeInFullScreen, let screen = window.screen {
-            DisplayMode.engageNative(
-                on: screen,
-                verbose: ProcessInfo.processInfo.environment["VELO_STATS"] != nil)
-        } else if !isFullScreen {
-            DisplayMode.restore()
-        }
+        // In a fullscreen Space the window server uses VRR to throttle
+        // ProMotion displays when it sees no Core Animation transactions —
+        // which is always the case for an app that renders on its own thread
+        // with presentsWithTransaction = false. Disabling display sync stops
+        // the layer from gating presentation on the system's vsync cadence,
+        // letting the render thread's own pacing (drawable semaphore + Metal 4
+        // waitForDrawable/signalDrawable) control timing. In windowed mode we
+        // re-enable it for precise vsync-locked pacing.
+        metalLayer.displaySyncEnabled = !isFullScreen
+        NSApp.presentationOptions = []
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         if isFullScreen { NSApp.activate() }
         window.makeFirstResponder(self)
         requestRefreshRate()
@@ -451,7 +401,6 @@ final class MetalCanvasNSView: NSView {
         ) { _ in
             MainActor.assumeIsolated {
                 NSApp.presentationOptions = []
-                DisplayMode.restore()
             }
         })
     }
@@ -515,9 +464,7 @@ struct MetalCanvasView: NSViewRepresentable {
     /// Handed the live stats once the view exists, so the overlay can poll them
     /// without the SwiftUI layer reaching into the renderer itself.
     var onStats: (FrameStats) -> Void
-    var nativeInFullScreen: Bool
     var frameCap: Double
-    var borderlessFullScreen: Bool
     var sceneIndex: Int
     var onSceneChange: (Int) -> Void
 
@@ -529,9 +476,7 @@ struct MetalCanvasView: NSViewRepresentable {
         view.onToggleHDR = onToggleHDR
         view.onTogglePerf = onTogglePerf
         if let stats = view.stats { onStats(stats) }
-        view.nativeInFullScreen = nativeInFullScreen
         view.frameCap = frameCap
-        view.borderlessFullScreen = borderlessFullScreen
         view.sceneIndex = sceneIndex
         view.onSceneChange = onSceneChange
         return view
@@ -543,9 +488,7 @@ struct MetalCanvasView: NSViewRepresentable {
         nsView.onToggleMenu = onToggleMenu
         nsView.onToggleHDR = onToggleHDR
         nsView.onTogglePerf = onTogglePerf
-        nsView.nativeInFullScreen = nativeInFullScreen
         nsView.frameCap = frameCap
-        nsView.borderlessFullScreen = borderlessFullScreen
         nsView.sceneIndex = sceneIndex
         nsView.onSceneChange = onSceneChange
     }

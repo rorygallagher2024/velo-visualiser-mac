@@ -25,6 +25,7 @@ enum SceneCatalog {
         "Spectral Bloom",
         "Aurora Drift",
         "Quicksilver",
+        "Nebula",
     ]
 
     static func makeAll() -> [VeloScene] {
@@ -45,6 +46,7 @@ enum SceneCatalog {
             SpectralBloomScene(),
             AuroraDriftScene(),
             QuicksilverScene(),
+            NebulaScene(),
         ]
     }
 
