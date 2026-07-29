@@ -166,7 +166,7 @@ enum MachineInfo {
         guard size > 0 else { return "Apple Silicon" }
         var buf = [CChar](repeating: 0, count: size)
         sysctlbyname("machdep.cpu.brand_string", &buf, &size, nil, 0)
-        let raw = String(cString: buf)
+        let raw = String(decoding: buf.prefix(while: { $0 != 0 }).map(UInt8.init), as: UTF8.self)
         // "Apple M4 Pro" is more useful than the full Intel-style string.
         return raw.hasPrefix("Apple") ? raw : String(raw.prefix(40))
     }()
