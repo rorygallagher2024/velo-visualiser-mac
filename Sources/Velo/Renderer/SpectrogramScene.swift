@@ -23,7 +23,8 @@ final class SpectrogramScene: VeloScene {
 
     let name = "Spectrogram"
 
-    private var writeCol = 0
+    private var writeCol: Float = 0
+    private let colsPerSecond: Float = 120.0
     private var history: MTLBuffer?
 
     var historyBuffer: MTLBuffer? { history }
@@ -42,16 +43,29 @@ final class SpectrogramScene: VeloScene {
         let bins = audio.currentBins()
         guard bins.count == Self.bins, let history else { return }
 
-        // One column, written in place. Column-major so a column is contiguous.
-        let dst = history.contents()
-            .advanced(by: writeCol * Self.bins * MemoryLayout<Float>.stride)
-            .assumingMemoryBound(to: Float.self)
-        for i in 0..<Self.bins { dst[i] = bins[i] }
-        writeCol = (writeCol + 1) % Self.cols
+        // Time-based advancement so scroll speed is independent of framerate
+        let advance = dt * colsPerSecond
+        let oldInt = Int(writeCol)
+        writeCol = (writeCol + advance).truncatingRemainder(dividingBy: Float(Self.cols))
+        let newInt = Int(writeCol)
+        
+        // Find how many discrete columns we crossed
+        var crossed = newInt - oldInt
+        if crossed < 0 { crossed += Self.cols }
+        
+        if crossed > 0 {
+            for offset in 0..<crossed {
+                let targetCol = (oldInt + 1 + offset) % Self.cols
+                let dst = history.contents()
+                    .advanced(by: targetCol * Self.bins * MemoryLayout<Float>.stride)
+                    .assumingMemoryBound(to: Float.self)
+                for i in 0..<Self.bins { dst[i] = bins[i] }
+            }
+        }
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
-        var packed = SIMD2<Float>(Float(writeCol), Float(Self.cols))
+        var packed = SIMD2<Float>(writeCol, Float(Self.cols))
         pointer.copyMemory(from: &packed, byteCount: MemoryLayout<SIMD2<Float>>.size)
     }
 

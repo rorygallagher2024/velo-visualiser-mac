@@ -65,27 +65,29 @@ private final class RenderLoop: @unchecked Sendable {
         let thread = Thread { [self] in
             var nextDue = CACurrentMediaTime()
             while isRunning {
-                let cap = frameCap
-                if cap > 0 {
-                    let interval = 1.0 / cap
-                    let now = CACurrentMediaTime()
-                    if now < nextDue { Thread.sleep(forTimeInterval: nextDue - now) }
-                    // Re-anchor rather than accumulate, so a late frame does not
-                    // leave the loop trying to catch up forever.
-                    nextDue = max(nextDue + interval, CACurrentMediaTime())
+                autoreleasepool {
+                    let cap = frameCap
+                    if cap > 0 {
+                        let interval = 1.0 / cap
+                        let now = CACurrentMediaTime()
+                        if now < nextDue { Thread.sleep(forTimeInterval: nextDue - now) }
+                        // Re-anchor rather than accumulate, so a late frame does not
+                        // leave the loop trying to catch up forever.
+                        nextDue = max(nextDue + interval, CACurrentMediaTime())
+                    }
+                    lock.lock()
+                    let resize = pendingSize
+                    pendingSize = nil
+                    lock.unlock()
+                    if let resize, layer.drawableSize != resize {
+                        layer.drawableSize = resize
+                    }
+                    renderer.render(
+                        layer: layer,
+                        audio: audio,
+                        time: Float(CACurrentMediaTime() - startTime)
+                    )
                 }
-                lock.lock()
-                let resize = pendingSize
-                pendingSize = nil
-                lock.unlock()
-                if let resize, layer.drawableSize != resize {
-                    layer.drawableSize = resize
-                }
-                renderer.render(
-                    layer: layer,
-                    audio: audio,
-                    time: Float(CACurrentMediaTime() - startTime)
-                )
             }
         }
         thread.name = "com.lowlatency.velo.render"
