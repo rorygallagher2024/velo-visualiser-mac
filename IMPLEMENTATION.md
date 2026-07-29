@@ -60,20 +60,21 @@ At 1920x1080, 2.1 Mpx. Fragment cost scales with pixels, so multiply by about
 
 | Visual | GPU | Lit | Reacts |
 |--------|-----|-----|--------|
-| Spectrum Bars | 0.06 ms | 37% | 0.224 |
 | Spectrogram | 0.06 ms | 5% | 0.030 |
-| Circular Spectrum | 0.07 ms | 12% | 0.077 |
-| Pocket LED | 0.09 ms | 47% | 0.132 |
-| Laser Array | 0.11 ms | 100% | 0.406 |
+| Spectrum Bars | 0.07 ms | 37% | 0.224 |
+| Circular Spectrum | 0.08 ms | 12% | 0.077 |
+| Pocket LED | 0.08 ms | 47% | 0.132 |
+| Laser Array | 0.10 ms | 100% | 0.406 |
 | Tunnel | 0.12 ms | 2% | 0.002 |
-| Waveform | 0.22 ms | 3% | 0.013 |
-| Raw Oscilloscope | 0.23 ms | 0.1% | 0.004 |
-| Spectrum Analyser | 0.29 ms | 23% | 0.217 |
-| 3D LED | 0.50 ms | 37% | 0.099 |
-| Phosphor Scope | 0.60 ms | 6% | 0.009 |
+| Waveform | 0.21 ms | 3% | 0.013 |
+| Raw Oscilloscope | 0.24 ms | 0.1% | 0.004 |
+| Spectrum Analyser | 0.32 ms | 23% | 0.217 |
+| Waveform 3D | 0.41 ms | 87% | 0.109 |
+| 3D LED | 0.49 ms | 37% | 0.099 |
+| Phosphor Scope | 0.59 ms | 6% | 0.009 |
 | Spectral Bloom | 0.77 ms | 100% | 0.202 |
-| Aurora Drift | 1.44 ms | 100% | 0.491 |
-| Quicksilver | 1.67 ms | 100% | 0.118 |
+| Aurora Drift | 1.43 ms | 100% | 0.491 |
+| Quicksilver | 1.65 ms | 100% | 0.118 |
 
 Extrapolated to 5K fullscreen the heaviest is around 13 ms, against 8.3 ms at
 120 Hz. A render scale control is the fix when that day comes;
@@ -95,6 +96,31 @@ Diagnosing this from the shader side is quick with the self test: probe one
 quantity at a time by returning white where it is non-zero. `s.cols`, `s.write`
 and the computed indices all came back white; the buffer read came back black,
 which separates "wrong index" from "no data" in one run.
+
+## The waveform family
+
+`WaveHistory` is the data model for both Waveform and Waveform 3D, so the two
+can never disagree about what the wave IS, only about how to stage it. Each
+scene owns an instance rather than sharing one, which costs a rebuild of the
+nine second history when you switch between them and buys no shared mutable
+state.
+
+Pass `headFraction`, never the integer head. The part-built column has to be
+included as a fraction or the whole image jumps a column every 2.3 ms instead
+of sliding, which reads as judder that no amount of shader antialiasing hides.
+The flat Waveform shipped with that wrong for one commit.
+
+Waveform 3D is deliberately not a raymarch. With the camera beside the lanes,
+each curtain is a single analytic ray-plane intersection per pixel: three hits,
+over-composited front to back. What makes the curtains read as volumes rather
+than as glowing sheets is the slab integral, where optical depth is density
+times path length through the slab, so a curtain crossed at a grazing angle
+really is denser than one met face on.
+
+`fwidth()` in non-uniform control flow is undefined, and the horizon is exactly
+where neighbouring pixels disagree about whether they are below it. The floor
+coordinates and their derivatives are therefore computed for every pixel and
+only used below the horizon.
 
 ## Consuming the stream
 
@@ -301,8 +327,6 @@ VELO_SELFTEST=1     # render every visual offscreen, check pixels, exit
   geometry (sky, terrain grid, river, water, shards), so it needs multiple
   pipelines, meshes and depth. That does not fit one-pipeline-per-scene and is
   a different piece of work.
-* **Waveform 3D.** Single pass and shares `WaveHistory`, so it is now mostly
-  the shader. The obvious next one.
 * **The stereo half of Waveform.** Android splits the upper half to Left and
   the lower to Right when the source carries real stereo. That needs the stereo
   ring that was reverted, so this port is the mono min/max path only, which is

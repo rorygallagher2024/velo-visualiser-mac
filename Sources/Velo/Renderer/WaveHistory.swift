@@ -26,6 +26,18 @@ final class WaveHistory {
     static let fields = 6
 
     private(set) var head = 0
+
+    /// Head with the part-built column included as a fraction.
+    ///
+    /// The scroll must be continuous. Using the integer head makes the whole
+    /// image jump a column every 2.3 ms instead of sliding, which reads as a
+    /// judder that no amount of shader antialiasing can hide.
+    var headFraction: Float { Float(head) + samplesInSlice / max(slicePeriod, 1) }
+
+    /// Loudness right now relative to the track's own recent reference, 0 to 1.
+    /// Says "breakdown" or "drop" rather than "how far is the volume slider
+    /// up", because it is measured against the auto-gain's own reference.
+    private(set) var dynamics: Float = 0
     private var buffer: MTLBuffer?
     var gpuBuffer: MTLBuffer? { buffer }
 
@@ -34,6 +46,8 @@ final class WaveHistory {
     private var slicePeriod: Float = 100
     private var sliceMax: Float = -1
     private var sliceMin: Float = 1
+    private var sliceSumSq: Float = 0
+    private var sliceSamples: Int = 0
     private var sliceLo: Float = 0
     private var sliceMid: Float = 0
     private var sliceHi: Float = 0
@@ -63,6 +77,8 @@ final class WaveHistory {
     /// Band slivers below this are crossover leakage, not signal.
     private static let gateLow: Float = 0.05
     private static let gateHigh: Float = 0.12
+    private static let dynRise: Float = 0.006
+    private static let dynFall: Float = 0.0016
 
     func prepare(device: MTLDevice) {
         buffer = device.makeBuffer(
@@ -100,6 +116,8 @@ final class WaveHistory {
     private func accumulate(_ sample: Float) {
         sliceMax = max(sliceMax, sample)
         sliceMin = min(sliceMin, sample)
+        sliceSumSq += sample * sample
+        sliceSamples += 1
 
         // Three-way crossover. Independent cascaded pairs rather than a
         // subtractive split: subtracting one band from another leaks through
@@ -146,8 +164,15 @@ final class WaveHistory {
         store[4] = display(down, norm)
         store[5] = 0                       // beat mark, unused without Link
 
+        // Asymmetric: opens with the music, closes gently, so a drop lands and
+        // a breakdown eases rather than snapping shut between two quiet columns.
+        let rms = sqrt(sliceSumSq / Float(max(sliceSamples, 1)))
+        let dispRms = display(rms, norm)
+        dynamics += (dispRms - dynamics) * (dispRms > dynamics ? Self.dynRise : Self.dynFall)
+
         head = (head + 1) % Self.slices
         sliceMax = -1; sliceMin = 1
+        sliceSumSq = 0; sliceSamples = 0
         sliceLo = 0; sliceMid = 0; sliceHi = 0
     }
 

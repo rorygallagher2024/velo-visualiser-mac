@@ -39,7 +39,7 @@ final class WaveformScene: VeloScene {
     func update(audio: AudioEngine, dt: Float) { history.consume(audio: audio) }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
-        var head = Float(history.head)
+        var head = history.headFraction
         pointer.copyMemory(from: &head, byteCount: MemoryLayout<Float>.stride)
     }
 
