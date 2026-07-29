@@ -203,9 +203,28 @@ than sleeping after the work is already done.
 
 ## HDR
 
-The toggle switches the layer to extended linear Display P3 with EDR enabled and
-the drawable to `rgba16Float`. It is for viewing on the Mac. OBS capturing a
-window sees tone mapped standard range, so leave it off when streaming.
+The toggle switches the drawable to `rgba16Float` and the layer to
+**extended** Display P3, not extended **linear** Display P3. The two names are
+one word apart and mean opposite things about what a shader's output is.
+
+Every scene emits display referred colour, the same values that look correct
+written into an SDR framebuffer. Extended Display P3 shares its transfer
+function and primaries with plain Display P3, so everything inside 0 to 1 is
+pixel identical to SDR and only values above 1.0 reach into headroom. That is
+the point of the toggle: the same picture, plus real highlights. The linear
+variant would instead declare those values to be linear light, lifting every
+midtone (0.5 displays at about 0.73) and washing the image out while the
+highlights disappear into the general brightening.
+
+Headroom is not a fixed property of the Mac. Apple's built in panels trade it
+against SDR brightness, and macOS only grants any at all once something asks for
+extended range, so a display can report 1.0x while idle and 6.5x a moment after
+the toggle goes on. The controls report the live figure next to the switch and
+the log records it, because a toggle that cannot do anything is otherwise
+indistinguishable from a toggle that is broken.
+
+It is for viewing on the Mac. OBS capturing a window sees tone mapped standard
+range, so leave it off when streaming.
 
 ## Diagnostics
 
@@ -223,6 +242,9 @@ Two environment variables help when something looks wrong:
 ```bash
 VELO_STATS=1        # frame timing: fps, waits, encode, true GPU time, drops
 VELO_AUDIO_DEBUG=1  # capture and analysis levels, per channel
+VELO_HDR=1          # start in extended range
+VELO_SCENE=n        # start on a given visual
+VELO_CAP=n          # start at a given frame cap
 ```
 
 ## Layout

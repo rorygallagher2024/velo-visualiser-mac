@@ -208,10 +208,45 @@ final class MetalCanvasNSView: NSView {
         let format: MTLPixelFormat = hdrEnabled ? .rgba16Float : .bgra8Unorm
         metalLayer.pixelFormat = format
         metalLayer.wantsExtendedDynamicRangeContent = hdrEnabled
+
+        // EXTENDED, not extended-LINEAR. Both exist and the names are one word
+        // apart, but they mean opposite things about what a shader's output is.
+        //
+        // Every scene here emits display-referred colour, the same values that
+        // look correct written into an SDR framebuffer. `extendedDisplayP3`
+        // shares its transfer function and primaries with `displayP3` exactly,
+        // so everything inside 0...1 is pixel-identical to SDR and only values
+        // ABOVE 1.0 reach into headroom, which is the whole point of the
+        // toggle: same picture, real highlights.
+        //
+        // `extendedLinearDisplayP3` would instead declare those same values to
+        // be linear light. 0.5 then displays at about 0.73, every midtone lifts
+        // and the image washes out while the highlights it was supposed to buy
+        // disappear into the general brightening.
         metalLayer.colorspace = CGColorSpace(
-            name: hdrEnabled ? CGColorSpace.extendedLinearDisplayP3 : CGColorSpace.displayP3
+            name: hdrEnabled ? CGColorSpace.extendedDisplayP3 : CGColorSpace.displayP3
         )
         renderer?.buildPipeline(for: format)
+        if hdrEnabled { reportHeadroom() }
+    }
+
+    /// What the display can actually give us above SDR white.
+    ///
+    /// Worth stating out loud, because on Apple's built-in panels headroom is
+    /// traded against SDR brightness: at full brightness it can be 1.0, meaning
+    /// there is no room above white and the toggle genuinely cannot do
+    /// anything. That is a display state, not a bug, and it is invisible unless
+    /// asked about.
+    private func reportHeadroom() {
+        guard let screen = window?.screen ?? NSScreen.main else { return }
+        let now = screen.maximumExtendedDynamicRangeColorComponentValue
+        let potential = screen.maximumPotentialExtendedDynamicRangeColorComponentValue
+        VeloLog.write("hdr", String(
+            format: "headroom %.2fx now, %.2fx potential on %@%@",
+            now, potential, screen.localizedName,
+            now <= 1.01
+                ? ". No room above white: lower the display brightness to free some."
+                : ""))
     }
 
     override func viewDidMoveToWindow() {

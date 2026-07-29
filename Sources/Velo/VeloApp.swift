@@ -25,7 +25,9 @@ struct VeloApp: App {
 final class AppModel {
     var menuOpen = false
     var sceneIndex = 0
-    var hdrEnabled = false
+    /// `VELO_HDR=1` starts in extended range, so the path can be exercised
+    /// without driving the UI.
+    var hdrEnabled = ProcessInfo.processInfo.environment["VELO_HDR"] != nil
     /// Claim the panel's native resolution while fullscreen. On a scaled
     /// desktop the compositor otherwise downsamples every frame, which measured
     /// as a hard 80 fps cap on a 120 Hz panel with the GPU 87% idle.

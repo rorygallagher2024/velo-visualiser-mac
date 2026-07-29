@@ -40,7 +40,7 @@ private struct HintBar: View {
     @State private var visible = true
 
     var body: some View {
-        Text("M controls · F fullscreen · H HDR · 1-2 / ← → visual")
+        Text("M controls · F fullscreen · H HDR · 1-9 0 / ← → visual")
             .font(.system(size: 11, weight: .regular, design: .default))
             .foregroundStyle(.white.opacity(0.35))
             .opacity(visible ? 1 : 0)
@@ -53,6 +53,9 @@ private struct HintBar: View {
 
 /// Settings, modelled on the Android sheet: dark panel, small caps section
 /// headers, captions beneath their control.
+///
+/// The HDR caption reports live display headroom, because a toggle that does
+/// nothing is indistinguishable from a toggle that is broken.
 private struct ControlPanel: View {
     @Bindable var model: AppModel
     @State private var devices: [AudioInputDevice] = []
@@ -97,6 +100,12 @@ private struct ControlPanel: View {
                     .toggleStyle(.switch)
                 caption("Extended range on the local display. OBS captures a "
                         + "window as standard range, so leave this off for streaming.")
+                // Headroom is the whole story for whether this toggle can do
+                // anything, and it is not a fixed property of the Mac: Apple's
+                // built-in panels trade it against SDR brightness, so at full
+                // brightness there is often none. Without saying so, the switch
+                // looks broken when it is the display that has no room.
+                caption(Self.headroomSummary(hdrOn: model.hdrEnabled))
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -146,6 +155,32 @@ private struct ControlPanel: View {
             .font(.system(size: 11, weight: .medium))
             .tracking(1.1)
             .foregroundStyle(.white.opacity(0.45))
+    }
+
+    /// Live EDR headroom on the screen showing the window.
+    ///
+    /// Which number to quote depends on the toggle, and getting that wrong is
+    /// worse than saying nothing. macOS only grants headroom once something
+    /// asks for extended range, so the live value reads 1.0x whenever HDR is
+    /// off. Reporting that as "no headroom" would tell the user the feature is
+    /// dead at exactly the moment they are deciding whether to switch it on.
+    static func headroomSummary(hdrOn: Bool) -> String {
+        guard let screen = NSScreen.main else { return "Headroom unavailable." }
+        let potential = screen.maximumPotentialExtendedDynamicRangeColorComponentValue
+        guard potential > 1.01 else {
+            return "This display reports no extended range, so the toggle has "
+                 + "nothing to show."
+        }
+        guard hdrOn else {
+            return String(format: "This display can reach %.0fx above white.", potential)
+        }
+        let now = screen.maximumExtendedDynamicRangeColorComponentValue
+        if now <= 1.01 {
+            return String(format: "No headroom right now, though %.0fx is available in "
+                          + "principle. Lower the display brightness to free some.", potential)
+        }
+        return String(format: "%.1fx headroom above white right now, of %.0fx possible.",
+                      now, potential)
     }
 
     private func caption(_ text: String) -> some View {
