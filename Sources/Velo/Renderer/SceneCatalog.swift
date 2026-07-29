@@ -8,6 +8,7 @@ import Foundation
 enum SceneCatalog {
     static let names = [
         // Instruments: honest readouts of the signal.
+        "Level Meter",
         "Spectrum Analyser",
         "Raw Oscilloscope",
         "Phosphor Scope",
@@ -40,6 +41,7 @@ enum SceneCatalog {
 
     static func makeAll() -> [VeloScene] {
         [
+            LevelMeterScene(),
             SpectrumAnalyserScene(),
             RawOscilloscopeScene(),
             PhosphorScopeScene(),
