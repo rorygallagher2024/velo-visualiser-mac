@@ -63,6 +63,7 @@ final class Renderer: @unchecked Sendable {
     /// new file — the same shape as the Android catalogue.
     private let scenes: [VeloScene] = SceneCatalog.makeAll()
     private var sceneIndexStorage = 0
+    private var pendingScene: Int?
     private let sceneLock = NSLock()
 
     /// Read from the UI, written from the render thread's caller.
@@ -126,18 +127,47 @@ final class Renderer: @unchecked Sendable {
         guard buildPipeline(for: .bgra8Unorm) else { return nil }
     }
 
-    /// Switch scenes. Each carries its own shader, so this recompiles — a few
+    /// Switch scenes. Each carries its own shader, so this recompiles: a few
     /// milliseconds, once, on a keypress. Cheaper than keeping every pipeline
     /// resident for visuals that may never be shown.
+    ///
+    /// Only REQUESTS the switch. It used to move the index here and rebuild the
+    /// pipeline on the caller's thread, which is the main thread, while the
+    /// render thread was mid-frame. Two things went wrong in that window: the
+    /// render thread read the new scene's data through the old scene's shader,
+    /// which interprets the buffer as a completely different struct and draws
+    /// garbage, and `pipeline` itself was reassigned underneath a thread that
+    /// was using it. That was the flash of distortion when stepping through
+    /// visuals with the arrow keys.
+    ///
+    /// The render thread now performs the swap between frames, where it is the
+    /// only thread touching either, and builds the pipeline BEFORE moving the
+    /// index so the two can never disagree.
     func selectScene(_ index: Int) {
         let clamped = ((index % scenes.count) + scenes.count) % scenes.count
         sceneLock.lock()
-        let changed = clamped != sceneIndexStorage
-        sceneIndexStorage = clamped
+        if clamped != sceneIndexStorage { pendingScene = clamped }
         sceneLock.unlock()
-        guard changed else { return }
+    }
+
+    /// Apply a requested scene change. Render thread only.
+    private func applyPendingScene() {
+        sceneLock.lock()
+        let target = pendingScene
+        pendingScene = nil
+        sceneLock.unlock()
+        guard let target, target != sceneIndexStorage else { return }
+
+        // Build first, swap second. A failed compile leaves the current scene
+        // running rather than presenting a black canvas.
+        let previous = sceneIndexStorage
+        sceneLock.lock(); sceneIndexStorage = target; sceneLock.unlock()
         library = nil
-        _ = buildPipeline(for: pixelFormat, force: true)
+        if !buildPipeline(for: pixelFormat, force: true) {
+            sceneLock.lock(); sceneIndexStorage = previous; sceneLock.unlock()
+            library = nil
+            _ = buildPipeline(for: pixelFormat, force: true)
+        }
     }
 
     func cycleScene(_ delta: Int) { selectScene(sceneIndex + delta) }
@@ -189,6 +219,7 @@ final class Renderer: @unchecked Sendable {
     /// same encode path as `render`, minus the drawable and the pacing.
     @discardableResult
     func renderOffscreen(into target: MTLTexture, audio: AudioEngine, time: Float) -> Double {
+        applyPendingScene()
         guard buildPipeline(for: target.pixelFormat), let pipeline else { return 0 }
         let slot = frameIndex % Self.maxFramesInFlight
         frameIndex &+= 1
@@ -243,6 +274,7 @@ final class Renderer: @unchecked Sendable {
     }
 
     func render(layer: CAMetalLayer, audio: AudioEngine, time: Float) {
+        applyPendingScene()
         guard let pipeline else { return }
 
         // ORDER MATTERS. Throttle on our own resources first, then ask for a
@@ -402,6 +434,10 @@ final class FrameStats: @unchecked Sendable {
         let snapshotDropped = due ? dropped : 0
         let snapshotPixels = pixels
         let snapshotSem = due ? semWaits : []
+        // How MANY long frames, not just the worst. One 268 ms stall per
+        // report and a steady drizzle of them are different faults, and the
+        // maximum alone cannot tell them apart.
+        let snapshotHitches = due ? intervals.filter({ $0 > 0.05 }).count : 0
         let snapshotDraw = due ? drawWaits : []
         let snapshotLink = linkInterval
         if due {
@@ -428,7 +464,7 @@ final class FrameStats: @unchecked Sendable {
             format: "[velo] %.1f fps  link %.2f ms  waitSem %.2f ms  waitDrawable %.2f ms  "
                 + "encode %.2f ms  gpu %.2f ms  worst %.1f  dropped %d  %d px",
             fps, snapshotLink * 1000, semMs, drawMs, encodeMs, gpuMs,
-            worst, snapshotDropped, snapshotPixels))
+            worst, snapshotDropped, snapshotPixels) + "  hitches \(snapshotHitches)")
         fflush(stdout)
         }
     }

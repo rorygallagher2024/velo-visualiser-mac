@@ -126,9 +126,8 @@ private struct ControlPanel: View {
             VStack(alignment: .leading, spacing: 6) {
                 Toggle("Native resolution in fullscreen", isOn: $model.nativeInFullScreen)
                     .toggleStyle(.switch)
-                caption("Takes the panel's own resolution while fullscreen. On a "
-                        + "scaled desktop the Mac otherwise downsamples every "
-                        + "frame, which halves the frame rate. Restored on exit.")
+                caption("Off by default. Switching the display mode costs more frame rate "
+                        + "than the scaled desktop does, so only turn it on if it measures better.")
             }
 
             Spacer(minLength: 0)

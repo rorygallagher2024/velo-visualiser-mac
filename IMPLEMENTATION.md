@@ -197,19 +197,64 @@ via `requestDrawableSize`.
 
 `.autoHideMenuBar` causes resize churn. Use `.hideMenuBar`.
 
-### The scaled resolution trap
+### Do not claim the display mode
 
-On a scaled desktop the compositor downsamples every frame and the frame rate
-drops by a third: measured 80 fps against 120, with the GPU 87 percent idle. The
-app claims the panel's native mode for the duration of fullscreen and restores
-it on exit. `DisplayMode.swift`, using `CGDisplaySetDisplayMode` and the native
-timing flag `ioFlags & 0x02000000`.
+There is a setting to switch the display to the panel's native mode while
+fullscreen. **It is off by default and should stay off.**
 
-This took four wrong theories to find, three of which blamed the environment.
-The instrumentation gap was the actual problem: timing started AFTER the
-drawable was acquired, which hid the stall completely. `waitSem` and
-`waitDrawable` exist now for that reason, and `waitDrawable` read 12.32 ms
-fullscreen against 2.37 ms windowed the moment they were added.
+It was added earlier to recover frame rate on a scaled desktop, on a
+measurement of 80 fps against 120. Measured again later, against itself,
+fullscreen, same machine:
+
+```
+with the claim:     88-103 fps, 1-2 stalls per 2 s, worst ~270 ms, 5.9 Mpx
+without the claim:  118-119 fps, no stalls,         worst ~25 ms,  8.4 Mpx
+```
+
+Slower while drawing 40 percent MORE pixels. Switching the mode leaves the
+compositor doing periodic work that stalls the render thread for about 270 ms
+once or twice a second, and the stall outlives fullscreen because the restore
+does the same thing again.
+
+That periodic stall is the one noted as unexplained early in this project. It
+was never mysterious; it was self-inflicted.
+
+The earlier 80-against-120 result is not reproducible now. It may have been
+confounded: several measurements from that period were taken from a live window
+that was being resized, which changes the pixel count under the measurement.
+
+### Fullscreen resize churn
+
+AppKit constrains an ordinary window to stay clear of the menu bar, so a
+borderless window at the screen frame gets shoved 32 pt shorter whenever the bar
+returns, and the drawable pool is reallocated. Fixes, in order of how much they
+matter:
+
+* `updateDrawableSize` only acts when the size actually CHANGED. AppKit sends
+  resize notifications far more often than the size differs.
+* The window sits at menu-bar level while fullscreen, so it is not constrained.
+* `NSApp.activate()` before setting presentation options, since those only
+  apply to the active application.
+* Exiting waits two main-queue turns before restoring the frame, for the same
+  reason entering waits one: a display mode change does not reach `NSScreen`
+  until later, and restoring into the wrong coordinate space leaves AppKit
+  correcting the frame for seconds afterwards.
+
+## Switching scenes
+
+`selectScene` only REQUESTS a change; the render thread applies it between
+frames.
+
+It used to move the index and rebuild the pipeline on the caller's thread, which
+is the main thread, while the render thread was mid-frame. Two things went wrong
+in that window. The render thread read the NEW scene's data through the OLD
+scene's shader, which interprets the buffer as an entirely different struct and
+draws garbage. And `pipeline` was reassigned underneath a thread using it. That
+was the flash of distortion when stepping through visuals with the arrow keys.
+
+The pipeline is built BEFORE the index moves, and a failed compile rolls back,
+so the two can never disagree and a bad shader leaves the current visual running
+rather than presenting black.
 
 ## HDR
 

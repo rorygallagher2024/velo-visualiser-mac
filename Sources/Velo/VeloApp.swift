@@ -28,10 +28,21 @@ final class AppModel {
     /// `VELO_HDR=1` starts in extended range, so the path can be exercised
     /// without driving the UI.
     var hdrEnabled = ProcessInfo.processInfo.environment["VELO_HDR"] != nil
-    /// Claim the panel's native resolution while fullscreen. On a scaled
-    /// desktop the compositor otherwise downsamples every frame, which measured
-    /// as a hard 80 fps cap on a 120 Hz panel with the GPU 87% idle.
-    var nativeInFullScreen = true
+    /// Claim the panel's native resolution while fullscreen.
+    ///
+    /// OFF by default, which reverses an earlier decision. Claiming the mode
+    /// was added to recover frame rate on a scaled desktop, and measured
+    /// against itself it now does the opposite: switching the mode leaves the
+    /// compositor doing periodic work that stalls the render thread for about
+    /// 270 ms once or twice a second.
+    ///
+    ///     with the claim:     88-103 fps, 1-2 stalls per 2 s, 5.9 Mpx
+    ///     without the claim:  118-119 fps, no stalls,         8.4 Mpx
+    ///
+    /// Slower while drawing 40 percent MORE pixels, which is as clear as a
+    /// result gets. Left as a toggle because a different panel may behave
+    /// differently, but nothing should opt into it without measuring first.
+    var nativeInFullScreen = ProcessInfo.processInfo.environment["VELO_NATIVE"] != nil
     /// 0 means uncapped (present every vsync).
     var frameCap: Double = {
         if let c = ProcessInfo.processInfo.environment["VELO_CAP"], let v = Double(c) {

@@ -301,9 +301,20 @@ final class MetalCanvasNSView: NSView {
         if nativeInFullScreen {
             DisplayMode.engageNative(on: screen, verbose: verbose)
         }
+        // Activate FIRST. Presentation options only take effect for the active
+        // application, and without them macOS keeps the menu bar and shrinks
+        // the borderless window 32 pt clear of it. That is a real resize, and
+        // it repeats every time focus flickers.
+        NSApp.activate()
         NSApp.presentationOptions = [.hideDock, .hideMenuBar]
         window.styleMask = [.borderless]
-        window.level = .normal
+        // Above the menu bar, not merely hiding it. AppKit constrains an
+        // ordinary window to stay clear of the menu bar, so whenever the bar
+        // came back the window was shoved 32 pt shorter and the drawable pool
+        // was reallocated. Measured: the height flapping between 1964 and 1900
+        // pixels several times a second, each flap a ~268 ms stall. A window
+        // at menu-bar level is not constrained, so the frame simply holds.
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
 
         // The screen's frame only reflects a mode change on the next main-queue
         // turn, so the frame is taken after the hop rather than from the stale
@@ -320,13 +331,22 @@ final class MetalCanvasNSView: NSView {
     private func exitFullScreen() {
         guard let window, let frame = savedFrame else { return }
         window.styleMask = savedStyle ?? [.titled, .closable, .miniaturizable, .resizable]
+        window.level = .normal
         NSApp.presentationOptions = []
         DisplayMode.restore()
         savedFrame = nil
         savedStyle = nil
-        DispatchQueue.main.async { [weak self, window] in
-            window.setFrame(frame, display: true)
-            window.makeFirstResponder(self)
+        // Two hops, for the same reason entering needs one: a display mode
+        // change does not reach `NSScreen` until a later main-queue turn.
+        // Restoring the frame before that lands applies the saved rectangle in
+        // the wrong coordinate space, and AppKit then spends the next several
+        // seconds correcting it, reallocating the drawable pool on every step.
+        // That is why the stall used to outlive fullscreen itself.
+        DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self, window] in
+                window.setFrame(frame, display: true)
+                window.makeFirstResponder(self)
+            }
         }
     }
 
@@ -382,6 +402,12 @@ final class MetalCanvasNSView: NSView {
             width: max(bounds.width * scale * renderScale, 1),
             height: max(bounds.height * scale * renderScale, 1)
         )
+        // Only when it actually changed. Changing `drawableSize` makes
+        // CAMetalLayer discard and reallocate its whole drawable pool, which
+        // stalls the render thread for a couple of hundred milliseconds. AppKit
+        // sends resize notifications far more often than the size really
+        // changes, so an unguarded path turns every one of them into a hitch.
+        guard size != metalLayer.drawableSize else { return }
         if let loop {
             loop.requestDrawableSize(size)
         } else {
