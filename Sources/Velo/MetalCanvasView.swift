@@ -162,11 +162,13 @@ final class MetalCanvasNSView: NSView {
 
     /// A digit that names a visual. Derived from the catalogue rather than
     /// listed, so adding a scene doesn't mean remembering to add a key.
+    /// `0` is the tenth, by the usual convention, since a single keypress
+    /// cannot reach past nine.
     private func numberKey(in event: NSEvent) -> Int? {
-        guard let text = event.charactersIgnoringModifiers,
-              let n = Int(text),
-              (1...SceneCatalog.names.count).contains(n)
+        guard let text = event.charactersIgnoringModifiers, let digit = Int(text)
         else { return nil }
+        let n = digit == 0 ? 10 : digit
+        guard (1...SceneCatalog.names.count).contains(n) else { return nil }
         return n
     }
 

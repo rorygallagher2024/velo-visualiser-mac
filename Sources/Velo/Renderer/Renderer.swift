@@ -95,11 +95,8 @@ final class Renderer: @unchecked Sendable {
         for _ in 0..<Self.maxFramesInFlight {
             guard let u = device.makeBuffer(
                     length: MemoryLayout<Uniforms>.stride, options: .storageModeShared),
-                  // Sized for the largest scene's payload (the scope's 1024
-                  // samples), so switching visuals never reallocates.
                   let b = device.makeBuffer(
-                    length: RawOscilloscopeScene.pointCount * MemoryLayout<Float>.stride,
-                    options: .storageModeShared)
+                    length: SceneCatalog.sceneBufferBytes, options: .storageModeShared)
             else { return nil }
             uniformBuffers.append(u)
             bandBuffers.append(b)

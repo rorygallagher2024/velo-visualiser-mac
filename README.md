@@ -48,7 +48,7 @@ can end up in the capture. Everything is a key.
 | `M` | show or hide the controls |
 | `F` | fullscreen |
 | `H` | HDR on or off |
-| `1` to `8` | pick a visual directly |
+| `1` to `9`, `0` | pick a visual directly, `0` being the tenth |
 | `left` `right` | step through the visuals |
 
 ## Audio
@@ -87,20 +87,22 @@ Oscilloscope has none of it and is about as direct as the display allows.
 
 ## Visuals
 
-Four instruments, which are honest readouts of the signal, then four generative
+Five instruments, which are honest readouts of the signal, then five generative
 scenes, which are driven by band energy rather than measuring it. GPU cost is
-measured at 8.1 megapixels.
+measured at 8.1 megapixels, against an 8.3 ms budget at 120 Hz.
 
 | Key | Visual | GPU |
 |-----|--------|-----|
-| `1` | Spectrum Analyser | 1.2 ms |
-| `2` | Raw Oscilloscope | 3.4 ms |
-| `3` | Circular Spectrum | 1.7 ms |
-| `4` | Pocket LED | 2.0 ms |
-| `5` | Tunnel | 2.7 ms |
-| `6` | Laser Array | 2.4 ms |
-| `7` | Spectral Bloom | 5.7 ms |
-| `8` | Aurora Drift | 5.9 ms |
+| `1` | Spectrum Analyser | 1.5 ms |
+| `2` | Raw Oscilloscope | 3.5 ms |
+| `3` | Phosphor Scope | 5.0 ms |
+| `4` | Circular Spectrum | 1.7 ms |
+| `5` | Pocket LED | 2.1 ms |
+| `6` | Tunnel | 2.7 ms |
+| `7` | Laser Array | 2.2 ms |
+| `8` | Spectral Bloom | 6.0 ms |
+| `9` | Aurora Drift | 6.0 ms |
+| `0` | Quicksilver | 7.0 ms |
 
 **Spectrum Analyser.** Thirty one third octave bands, because that is the
 standard a real RTA uses rather than a number picked to fill the screen. Peak
@@ -115,6 +117,16 @@ no line width, so a line strip would draw a half point hairline that aliases int
 dots on a Retina drawable. The trace is rasterised in the fragment shader as the
 true distance to the nearest waveform segment, which holds a constant pixel width
 at any resolution and cannot skip a peak between samples.
+
+**Phosphor Scope.** The other end of the scale from the Raw Oscilloscope, and
+renamed here from Android's plain "Oscilloscope" so the pair reads clearly in a
+flat list. This one is a CRT: a sub pixel white filament inside a coloured
+phosphor halo, with chromatic aberration growing toward the edges and beam dwell
+dimming the fast transients, because a real beam spends less time on a steep
+slope and so deposits less light there. It also lifts the signal five times and
+then limits it with a tanh, which is a deliberate difference from the Raw
+Oscilloscope's flat linear gain. This scene is a look; that one is a
+measurement.
 
 **Circular Spectrum.** The same reading bent into a ring: 128 log spaced bins
 around the circle, each with a gravity peak dot that falls slower than its bar.
@@ -146,6 +158,16 @@ integers and read as a twitch rather than as motion.
 **Aurora Drift.** Curtains of fractional Brownian motion over a parallax
 starfield. Bass drives their height and surge, mids shift the palette, highs work
 the stars.
+
+**Quicksilver.** A mass of liquid metal, raymarched. A sphere whose radius is
+displaced by a stack of spherical lobes, each owned by a band: bass moves the
+low orders so the whole body stretches and rolls, mids raise broad swells, highs
+skitter fine ripples across the skin. What makes it read as metal is that there
+is no diffuse term anywhere and no faked specular. One function is both the
+background and what the surface reflects, sampled along different rays, so every
+highlight on the metal is the actual light behind you. The most expensive scene
+here by some way, and the bounding sphere rejection is what makes 72 march steps
+affordable, because most of the frame never marches at all.
 
 Adding a visual is one file plus one line in `SceneCatalog`. Everything after the
 first two needed nothing else: no renderer change, no protocol change and no new
@@ -218,9 +240,10 @@ Sources/Velo/
     SceneCatalog.swift     the fixed list of visuals
     BandEnergy.swift       shared low, mid and high fold, plus shader helpers
     SpectrumAnalyserScene.swift   RawOscilloscopeScene.swift
-    CircularSpectrumScene.swift   PocketLedScene.swift
-    TunnelScene.swift             LaserArrayScene.swift
-    SpectralBloomScene.swift      AuroraDriftScene.swift
+    PhosphorScopeScene.swift      CircularSpectrumScene.swift
+    PocketLedScene.swift          TunnelScene.swift
+    LaserArrayScene.swift         SpectralBloomScene.swift
+    AuroraDriftScene.swift        QuicksilverScene.swift
   Audio/
     AudioEngine.swift      device enumeration, AUHAL capture, vDSP analysis
 ```
