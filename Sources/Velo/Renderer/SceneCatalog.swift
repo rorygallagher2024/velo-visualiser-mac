@@ -13,6 +13,8 @@ enum SceneCatalog {
         "Phosphor Scope",
         "Circular Spectrum",
         "Pocket LED",
+        "Spectrum Bars",
+        "3D LED",
         // Generative: driven by band energy rather than measuring it.
         "Tunnel",
         "Laser Array",
@@ -28,6 +30,8 @@ enum SceneCatalog {
             PhosphorScopeScene(),
             CircularSpectrumScene(),
             PocketLedScene(),
+            BarSpectrumScene(),
+            LedMatrix3DScene(),
             TunnelScene(),
             LaserArrayScene(),
             SpectralBloomScene(),

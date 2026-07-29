@@ -48,7 +48,7 @@ can end up in the capture. Everything is a key.
 | `M` | show or hide the controls |
 | `F` | fullscreen |
 | `H` | HDR on or off |
-| `1` to `9`, `0` | pick a visual directly, `0` being the tenth |
+| `1` to `9`, `0` | jump to one of the first ten visuals |
 | `left` `right` | step through the visuals |
 
 ## Audio
@@ -87,91 +87,29 @@ Oscilloscope has none of it and is about as direct as the display allows.
 
 ## Visuals
 
-Five instruments, which are honest readouts of the signal, then five generative
-scenes, which are driven by band energy rather than measuring it. GPU cost is
-measured at 8.1 megapixels, against an 8.3 ms budget at 120 Hz.
+Seven instruments, which are honest readouts of the signal, then five generative
+scenes, which are driven by band energy rather than measuring it. All are ported
+from the Android app. GPU cost is measured at 8.1 megapixels, against an 8.3 ms
+budget at 120 Hz.
 
 | Key | Visual | GPU |
 |-----|--------|-----|
-| `1` | Spectrum Analyser | 1.5 ms |
-| `2` | Raw Oscilloscope | 3.5 ms |
-| `3` | Phosphor Scope | 5.0 ms |
-| `4` | Circular Spectrum | 1.7 ms |
-| `5` | Pocket LED | 2.1 ms |
-| `6` | Tunnel | 2.7 ms |
-| `7` | Laser Array | 2.2 ms |
-| `8` | Spectral Bloom | 6.0 ms |
-| `9` | Aurora Drift | 6.0 ms |
-| `0` | Quicksilver | 7.0 ms |
+| `1` | Spectrum Analyser | 0.6 ms |
+| `2` | Raw Oscilloscope | 1.8 ms |
+| `3` | Phosphor Scope | 4.3 ms |
+| `4` | Circular Spectrum | 0.7 ms |
+| `5` | Pocket LED | 0.8 ms |
+| `6` | Spectrum Bars | 0.5 ms |
+| `7` | 3D LED | 6.1 ms |
+| `8` | Tunnel | 1.2 ms |
+| `9` | Laser Array | 1.1 ms |
+| `0` | Spectral Bloom | 5.8 ms |
+| | Aurora Drift | 6.0 ms |
+| | Quicksilver | 6.0 ms |
 
-**Spectrum Analyser.** Thirty one third octave bands, because that is the
-standard a real RTA uses rather than a number picked to fill the screen. Peak
-programme ballistics: snap up, glide down. The gravity peak caps are the point,
-since they keep the shape of a mix legible for a moment after the transient that
-made it has gone.
+The last two are past the digits, so the arrow keys reach them.
 
-**Raw Oscilloscope.** A single thin trace straight from the PCM window at flat
-linear gain. No glow, no smoothing, no auto gain, so a hot signal genuinely runs
-off the top rather than being flattered. One thing changed in the port: Metal has
-no line width, so a line strip would draw a half point hairline that aliases into
-dots on a Retina drawable. The trace is rasterised in the fragment shader as the
-true distance to the nearest waveform segment, which holds a constant pixel width
-at any resolution and cannot skip a peak between samples.
-
-**Phosphor Scope.** The other end of the scale from the Raw Oscilloscope, and
-renamed here from Android's plain "Oscilloscope" so the pair reads clearly in a
-flat list. This one is a CRT: a sub pixel white filament inside a coloured
-phosphor halo, with chromatic aberration growing toward the edges and beam dwell
-dimming the fast transients, because a real beam spends less time on a steep
-slope and so deposits less light there. It also lifts the signal five times and
-then limits it with a tanh, which is a deliberate difference from the Raw
-Oscilloscope's flat linear gain. This scene is a look; that one is a
-measurement.
-
-**Circular Spectrum.** The same reading bent into a ring: 128 log spaced bins
-around the circle, each with a gravity peak dot that falls slower than its bar.
-Normalised on the shorter axis, so it stays round in any window shape.
-
-**Pocket LED.** A 24 by 14 dot matrix panel on the hardware meter ladder, green
-low through amber to red. Instant attack, smooth release, one peak hold cell per
-column, and a standby that settles to a resting glow after a few seconds of
-silence and snaps awake on the first signal.
-
-**Tunnel.** An infinite hexagonal corridor. Lows send a ripple travelling away
-down the corridor rather than scaling it uniformly, mids slide the wall colour
-and highs strobe the ribs. What makes it read as depth rather than as a pattern
-is the fog to absolute black at the centre, which is infinitely far away, and a
-derivative based line width that lets the wireframe dissolve honestly as it
-converges instead of aliasing into speckle.
-
-**Laser Array.** Fourteen beams out of a vanishing point, the way a rig full of
-scanners looks through haze. The spin is integrated rather than assigned, so the
-array never rewinds when the mix thins out. Two closed forms carry over from the
-Android version: the beam angle and palette are constant along a whole ray, and
-the twenty step radial accumulation is a geometric series, so it collapses to two
-exponentials and a divide.
-
-**Spectral Bloom.** An eight fold kaleidoscope over a domain warped fractal flow.
-The petal count is deliberately fixed. Driving it from the mids snapped between
-integers and read as a twitch rather than as motion.
-
-**Aurora Drift.** Curtains of fractional Brownian motion over a parallax
-starfield. Bass drives their height and surge, mids shift the palette, highs work
-the stars.
-
-**Quicksilver.** A mass of liquid metal, raymarched. A sphere whose radius is
-displaced by a stack of spherical lobes, each owned by a band: bass moves the
-low orders so the whole body stretches and rolls, mids raise broad swells, highs
-skitter fine ripples across the skin. What makes it read as metal is that there
-is no diffuse term anywhere and no faked specular. One function is both the
-background and what the surface reflects, sampled along different rays, so every
-highlight on the metal is the actual light behind you. The most expensive scene
-here by some way, and the bounding sphere rejection is what makes 72 march steps
-affordable, because most of the frame never marches at all.
-
-Adding a visual is one file plus one line in `SceneCatalog`. Everything after the
-first two needed nothing else: no renderer change, no protocol change and no new
-audio plumbing beyond a 128 bin accessor.
+Adding a visual is one file plus one line in `SceneCatalog`.
 
 ## Into OBS
 
@@ -186,13 +124,12 @@ published directly, so this is an addition rather than a rewrite.
 ## Fullscreen
 
 `F` takes a borderless window at exactly the screen frame rather than using
-AppKit's native fullscreen, which left the canvas 33 points short of the screen
-and cost the fast presentation path.
+AppKit's native fullscreen, which left the canvas short of the screen and cost
+the fast presentation path.
 
 If the desktop is running a scaled resolution, the app also claims the panel's
-native mode for the duration and restores it on exit. Without that, macOS
-downsamples every frame and the frame rate drops by a third. Measured: 80 fps
-against 120, with the GPU 87 percent idle.
+native mode for the duration and restores it on exit. Without that macOS
+downsamples every frame and the frame rate drops by a third.
 
 ## Frame rate
 
@@ -203,28 +140,16 @@ than sleeping after the work is already done.
 
 ## HDR
 
-The toggle switches the drawable to `rgba16Float` and the layer to
-**extended** Display P3, not extended **linear** Display P3. The two names are
-one word apart and mean opposite things about what a shader's output is.
-
-Every scene emits display referred colour, the same values that look correct
-written into an SDR framebuffer. Extended Display P3 shares its transfer
-function and primaries with plain Display P3, so everything inside 0 to 1 is
-pixel identical to SDR and only values above 1.0 reach into headroom. That is
-the point of the toggle: the same picture, plus real highlights. The linear
-variant would instead declare those values to be linear light, lifting every
-midtone (0.5 displays at about 0.73) and washing the image out while the
-highlights disappear into the general brightening.
+The toggle switches the drawable to `rgba16Float` and the layer to extended
+Display P3, which shares its transfer function with plain Display P3. Everything
+inside 0 to 1 is therefore identical to standard range and only values above 1.0
+reach into headroom, so the picture does not change and the highlights get
+brighter.
 
 Headroom is not a fixed property of the Mac. Apple's built in panels trade it
-against SDR brightness, and macOS only grants any at all once something asks for
-extended range, so a display can report 1.0x while idle and 6.5x a moment after
-the toggle goes on. The controls report the live figure next to the switch and
-the log records it, because a toggle that cannot do anything is otherwise
-indistinguishable from a toggle that is broken.
-
-It is for viewing on the Mac. OBS capturing a window sees tone mapped standard
-range, so leave it off when streaming.
+against display brightness, and macOS grants none at all until an app asks for
+extended range, so a display can report none while idle and plenty a moment
+after the toggle goes on. The controls say so when there is none to be had.
 
 ## Diagnostics
 

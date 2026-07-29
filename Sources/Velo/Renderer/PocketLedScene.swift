@@ -15,7 +15,7 @@ import Foundation
 /// and snaps awake on the first signal.
 ///
 /// Android carries the ballistics in a COLS x 2 texture. Here they are two runs
-/// of floats in the shared scene buffer — a texture for 48 values would be a
+/// of floats in the shared scene buffer: a texture for 48 values would be a
 /// sampler and an upload for nothing.
 final class PocketLedScene: VeloScene {
 
@@ -24,57 +24,30 @@ final class PocketLedScene: VeloScene {
 
     let name = "Pocket LED"
 
-    private var bar = [Float](repeating: 0, count: PocketLedScene.cols)
-    private var peak = [Float](repeating: 0, count: PocketLedScene.cols)
-    private var peakHold = [Float](repeating: 0, count: PocketLedScene.cols)
-    private var peakVelocity = [Float](repeating: 0, count: PocketLedScene.cols)
+    private var columns = ColumnBallistics(count: PocketLedScene.cols)
     private var idleGlow: Float = 1
     private var silentSeconds: Float = 0
 
-    private let releaseTau: Float = 0.14      // snaps up instantly, eases down this fast
-    private let peakHoldSec: Float = 0.7
-    private let peakGravity: Float = 1.1      // dial-fractions per second squared
     private let idleSilence: Float = 0.02
     private let idleAfterSec: Float = 3
     private let idleGlowFloor: Float = 0.4
     private let idleFallRate: Float = 1.2     // ease into idle, ~1.5 s
     private let idleWakeRate: Float = 9       // snap awake, ~0.15 s
 
+    init() {
+        columns.instantAttack = true          // an LED has no mass to accelerate
+        columns.releaseRate = 7               // about a 0.14 s fall
+        columns.peakHoldSec = 0.7
+        columns.peakGravity = 1.1
+    }
+
     func update(audio: AudioEngine, dt: Float) {
-        let bins = audio.currentBins()
-        guard bins.count == AudioEngine.binCount else { return }
+        let targets = ColumnBallistics.fold(audio.currentBins(), into: Self.cols)
+        let loudest = columns.update(targets: targets, dt: dt)
 
-        let fall = 1 - exp(-dt / releaseTau)
-        var loudest: Float = 0
-        for i in 0..<Self.cols {
-            let lo = i * AudioEngine.binCount / Self.cols
-            let hi = max((i + 1) * AudioEngine.binCount / Self.cols, lo + 1)
-            var sum: Float = 0
-            for j in lo..<hi { sum += bins[min(j, AudioEngine.binCount - 1)] }
-            let raw = sum / Float(hi - lo)
-            loudest = max(loudest, raw)
-
-            // Instant attack — an LED has no mass — and a smooth release.
-            bar[i] = raw >= bar[i] ? raw : bar[i] + (raw - bar[i]) * fall
-            advancePeak(i, dt: dt)
-        }
-        advanceIdle(loudest: loudest, dt: dt)
-    }
-
-    private func advancePeak(_ i: Int, dt: Float) {
-        if bar[i] >= peak[i] {
-            peak[i] = bar[i]
-            peakVelocity[i] = 0
-            peakHold[i] = peakHoldSec
-        } else if peakHold[i] > 0 {
-            peakHold[i] -= dt
-        } else {
-            peakVelocity[i] += peakGravity * dt
-            peak[i] = max(bar[i], peak[i] - peakVelocity[i] * dt)
-        }
-    }
-
-    private func advanceIdle(loudest: Float, dt: Float) {
+        // Settle to a resting glow after a few seconds of silence, and snap
+        // awake on the first signal. Driven by the raw loudest column, because
+        // a smoothed level never quite reaches zero.
         silentSeconds = loudest < idleSilence ? silentSeconds + dt : 0
         let target: Float = silentSeconds > idleAfterSec ? idleGlowFloor : 1
         let rate = target > idleGlow ? idleWakeRate : idleFallRate
@@ -82,15 +55,11 @@ final class PocketLedScene: VeloScene {
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
-        let bytes = Self.cols * MemoryLayout<Float>.stride
-        bar.withUnsafeBufferPointer { pointer.copyMemory(from: $0.baseAddress!, byteCount: bytes) }
-        peak.withUnsafeBufferPointer {
-            pointer.advanced(by: bytes).copyMemory(from: $0.baseAddress!, byteCount: bytes)
-        }
+        columns.write(into: pointer)
         // The idle glow rides along as one more float rather than as a uniform:
         // the scene buffer is already per-frame and already bound.
         var glow = idleGlow
-        pointer.advanced(by: bytes * 2)
+        pointer.advanced(by: Self.cols * 2 * MemoryLayout<Float>.stride)
             .copyMemory(from: &glow, byteCount: MemoryLayout<Float>.stride)
     }
 
@@ -99,7 +68,7 @@ final class PocketLedScene: VeloScene {
         \(Self.shaderPreamble)
 
         struct Panel {
-            float bar[\(Self.cols)];
+            float level[\(Self.cols)];
             float peak[\(Self.cols)];
             float glow;
         };
@@ -151,7 +120,7 @@ final class PocketLedScene: VeloScene {
             if (shape < 0.001) { return float4(0.0, 0.0, 0.0, 1.0); }
 
             int col = int(ci.x);
-            float bar = p.bar[col];
+            float bar = p.level[col];
             float peak = p.peak[col];
 
             float rowFrac = (ci.y + 0.5) / float(ROWS);

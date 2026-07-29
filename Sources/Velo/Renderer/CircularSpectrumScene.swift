@@ -16,47 +16,20 @@ final class CircularSpectrumScene: VeloScene {
 
     let name = "Circular Spectrum"
 
-    private var levels = [Float](repeating: 0, count: CircularSpectrumScene.bins)
-    private var peaks = [Float](repeating: 0, count: CircularSpectrumScene.bins)
-    private var peakHold = [Float](repeating: 0, count: CircularSpectrumScene.bins)
-    private var peakVelocity = [Float](repeating: 0, count: CircularSpectrumScene.bins)
+    private var bars = ColumnBallistics(count: CircularSpectrumScene.bins)
 
-    private let attackRate: Float = 60    // ~17 ms: effectively instant
-    private let releaseRate: Float = 10
-    private let peakHoldSec: Float = 0.5
-    private let peakGravity: Float = 1.4
+    init() {
+        bars.attackRate = 60      // ~17 ms: effectively instant
+        bars.releaseRate = 10
+        bars.peakHoldSec = 0.5
+        bars.peakGravity = 1.4
+    }
 
     func update(audio: AudioEngine, dt: Float) {
-        let bins = audio.currentBins()
-        guard bins.count == Self.bins else { return }
-        for i in 0..<Self.bins {
-            let target = bins[i]
-            let rate = target >= levels[i] ? attackRate : releaseRate
-            levels[i] += (target - levels[i]) * min(rate * dt, 1)
-
-            let shown = levels[i]
-            if shown >= peaks[i] {
-                peaks[i] = shown
-                peakVelocity[i] = 0
-                peakHold[i] = peakHoldSec
-            } else if peakHold[i] > 0 {
-                peakHold[i] -= dt
-            } else {
-                peakVelocity[i] += peakGravity * dt
-                peaks[i] = max(shown, peaks[i] - peakVelocity[i] * dt)
-            }
-        }
+        bars.update(targets: audio.currentBins(), dt: dt)
     }
 
-    func writeData(into pointer: UnsafeMutableRawPointer) {
-        let bytes = Self.bins * MemoryLayout<Float>.stride
-        levels.withUnsafeBufferPointer {
-            pointer.copyMemory(from: $0.baseAddress!, byteCount: bytes)
-        }
-        peaks.withUnsafeBufferPointer {
-            pointer.advanced(by: bytes).copyMemory(from: $0.baseAddress!, byteCount: bytes)
-        }
-    }
+    func writeData(into pointer: UnsafeMutableRawPointer) { bars.write(into: pointer) }
 
     var shaderSource: String {
         """

@@ -98,14 +98,15 @@ private struct ControlPanel: View {
             VStack(alignment: .leading, spacing: 6) {
                 Toggle("HDR", isOn: $model.hdrEnabled)
                     .toggleStyle(.switch)
-                caption("Extended range on the local display. OBS captures a "
-                        + "window as standard range, so leave this off for streaming.")
+                caption("Brighter highlights, on displays that can show them.")
                 // Headroom is the whole story for whether this toggle can do
                 // anything, and it is not a fixed property of the Mac: Apple's
                 // built-in panels trade it against SDR brightness, so at full
                 // brightness there is often none. Without saying so, the switch
                 // looks broken when it is the display that has no room.
-                caption(Self.headroomSummary(hdrOn: model.hdrEnabled))
+                if let warning = Self.headroomWarning(hdrOn: model.hdrEnabled) {
+                    caption(warning)
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -157,30 +158,21 @@ private struct ControlPanel: View {
             .foregroundStyle(.white.opacity(0.45))
     }
 
-    /// Live EDR headroom on the screen showing the window.
+    /// Said only when something is wrong.
     ///
-    /// Which number to quote depends on the toggle, and getting that wrong is
-    /// worse than saying nothing. macOS only grants headroom once something
-    /// asks for extended range, so the live value reads 1.0x whenever HDR is
-    /// off. Reporting that as "no headroom" would tell the user the feature is
-    /// dead at exactly the moment they are deciding whether to switch it on.
-    static func headroomSummary(hdrOn: Bool) -> String {
-        guard let screen = NSScreen.main else { return "Headroom unavailable." }
-        let potential = screen.maximumPotentialExtendedDynamicRangeColorComponentValue
-        guard potential > 1.01 else {
-            return "This display reports no extended range, so the toggle has "
-                 + "nothing to show."
+    /// A number nobody asked for is noise, but silently doing nothing is worse:
+    /// macOS grants no headroom until something requests extended range, so a
+    /// display can be perfectly capable and still show no effect until the
+    /// brightness comes down.
+    static func headroomWarning(hdrOn: Bool) -> String? {
+        guard let screen = NSScreen.main else { return nil }
+        guard screen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1.01 else {
+            return "This display cannot show extended range."
         }
-        guard hdrOn else {
-            return String(format: "This display can reach %.0fx above white.", potential)
-        }
-        let now = screen.maximumExtendedDynamicRangeColorComponentValue
-        if now <= 1.01 {
-            return String(format: "No headroom right now, though %.0fx is available in "
-                          + "principle. Lower the display brightness to free some.", potential)
-        }
-        return String(format: "%.1fx headroom above white right now, of %.0fx possible.",
-                      now, potential)
+        guard hdrOn,
+              screen.maximumExtendedDynamicRangeColorComponentValue <= 1.01
+        else { return nil }
+        return "No headroom at this brightness. Turn the display down to see it."
     }
 
     private func caption(_ text: String) -> some View {
