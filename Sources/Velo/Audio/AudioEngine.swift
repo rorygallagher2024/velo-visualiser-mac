@@ -407,6 +407,33 @@ final class AudioEngine: @unchecked Sendable {
 
     var sampleRate: Double { deviceSampleRate }
 
+    /// Frames written since the engine started. A consumer that needs the
+    /// stream rather than a snapshot holds one of these as a cursor.
+    var framesWritten: Int { writeIndex.load() }
+
+    /// Copy every frame written since `cursor`, oldest first, and return how
+    /// many were copied along with the cursor to pass next time.
+    ///
+    /// Exact, not estimated from elapsed time. A scene that builds a timeline
+    /// has to consume the sample stream without gaps or overlaps, and deriving
+    /// "how much audio arrived since the last frame" from a frame duration
+    /// mis-splices it on every hiccup.
+    ///
+    /// A consumer that falls behind by more than the ring holds loses the
+    /// oldest frames rather than stalling: the returned cursor jumps, and the
+    /// gap is the caller's to notice.
+    func drain(
+        since cursor: Int, into dst: UnsafeMutablePointer<Float>, capacity: Int
+    ) -> (count: Int, cursor: Int) {
+        let w = writeIndex.load()
+        let pending = w - cursor
+        guard pending > 0 else { return (0, w) }
+        let n = min(pending, min(capacity, ringCapacity))
+        let start = w - n
+        for i in 0..<n { dst[i] = ring[(start &+ i) % ringCapacity] }
+        return (n, w)
+    }
+
     /// Fill the ring with broadband synthetic signal, for `SelfTest`.
     ///
     /// A sum of tones across the spectrum rather than one sine, so every band

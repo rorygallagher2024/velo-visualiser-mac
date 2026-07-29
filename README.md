@@ -42,7 +42,7 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Thirteen Visuals:** Eight instruments and five generative scenes, all
+* **Fourteen Visuals:** Nine instruments and five generative scenes, all
   ported from the Android app.
 * **Built to be Captured:** No on screen chrome, keyboard only control, and a
   frame rate cap so you are not rendering frames a 60 fps stream will never
@@ -70,9 +70,11 @@ layers in the way.
 * **Spectrum Bars.** The classic coloured bars with gravity peak caps.
 * **3D LED.** The LED panel as an actual object, lenses and chassis, with a
   camera drifting around it.
-* **Spectrogram.** A scrolling heatmap of frequency against time. The one visual
-  with memory, so you watch a beat's structure scroll away rather than only
-  seeing the present.
+* **Spectrogram.** A scrolling heatmap of frequency against time. Watch a beat's
+  structure scroll away rather than only seeing the present.
+* **Waveform.** Nine seconds of rolling min and max history, with bass, mid and
+  high painted as separate layers, so a kick and a hat are two different shapes
+  rather than one blended colour.
 
 **Generative**, which are driven by the sound rather than measuring it:
 

@@ -16,6 +16,7 @@ enum SceneCatalog {
         "Spectrum Bars",
         "3D LED",
         "Spectrogram",
+        "Waveform",
         // Generative: driven by band energy rather than measuring it.
         "Tunnel",
         "Laser Array",
@@ -34,6 +35,7 @@ enum SceneCatalog {
             BarSpectrumScene(),
             LedMatrix3DScene(),
             SpectrogramScene(),
+            WaveformScene(),
             TunnelScene(),
             LaserArrayScene(),
             SpectralBloomScene(),

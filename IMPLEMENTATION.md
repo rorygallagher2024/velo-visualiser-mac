@@ -38,8 +38,13 @@ compiles and that the frame rate holds proves nothing about whether anything
 was drawn: a scene that outputs pure black passes both, at an excellent frame
 rate. One shipped that way, and the user found it rather than the check.
 
+It also renders every scene twice, once fed signal and once fed silence, at
+identical time values, and reports the mean difference. Animation cancels out,
+so what is left is audio reactivity. That catches the failure "draws something"
+cannot: a scene that renders happily and ignores the audio completely.
+
 It cannot tell you a visual is ugly or subtly wrong. It can tell you it is
-empty, which is the failure that had been slipping through.
+empty or deaf, which are the failures that had been slipping through.
 
 ## Measured cost
 
@@ -53,21 +58,22 @@ There was no thermal effect, which is what the note here used to claim.
 At 1920x1080, 2.1 Mpx. Fragment cost scales with pixels, so multiply by about
 3.9 for 8.1 Mpx and about 7 for 5K.
 
-| Visual | GPU | Lit |
-|--------|-----|-----|
-| Spectrum Bars | 0.08 ms | 37% |
-| Spectrogram | 0.08 ms | 5% |
-| Circular Spectrum | 0.10 ms | 12% |
-| Pocket LED | 0.10 ms | 47% |
-| Tunnel | 0.13 ms | 2% |
-| Laser Array | 0.13 ms | 100% |
-| Spectrum Analyser | 0.42 ms | 23% |
-| Raw Oscilloscope | 0.52 ms | 0.1% |
-| 3D LED | 0.55 ms | 37% |
-| Spectral Bloom | 0.85 ms | 100% |
-| Phosphor Scope | 0.96 ms | 6% |
-| Aurora Drift | 1.57 ms | 100% |
-| Quicksilver | 1.84 ms | 100% |
+| Visual | GPU | Lit | Reacts |
+|--------|-----|-----|--------|
+| Spectrum Bars | 0.06 ms | 37% | 0.224 |
+| Spectrogram | 0.06 ms | 5% | 0.030 |
+| Circular Spectrum | 0.07 ms | 12% | 0.077 |
+| Pocket LED | 0.09 ms | 47% | 0.132 |
+| Laser Array | 0.11 ms | 100% | 0.406 |
+| Tunnel | 0.12 ms | 2% | 0.002 |
+| Waveform | 0.22 ms | 3% | 0.013 |
+| Raw Oscilloscope | 0.23 ms | 0.1% | 0.004 |
+| Spectrum Analyser | 0.29 ms | 23% | 0.217 |
+| 3D LED | 0.50 ms | 37% | 0.099 |
+| Phosphor Scope | 0.60 ms | 6% | 0.009 |
+| Spectral Bloom | 0.77 ms | 100% | 0.202 |
+| Aurora Drift | 1.44 ms | 100% | 0.491 |
+| Quicksilver | 1.67 ms | 100% | 0.118 |
 
 Extrapolated to 5K fullscreen the heaviest is around 13 ms, against 8.3 ms at
 120 Hz. A render scale control is the fix when that day comes;
@@ -89,6 +95,16 @@ Diagnosing this from the shader side is quick with the self test: probe one
 quantity at a time by returning white where it is non-zero. `s.cols`, `s.write`
 and the computed indices all came back white; the buffer read came back black,
 which separates "wrong index" from "no data" in one run.
+
+## Consuming the stream
+
+`AudioEngine.drain(since:)` returns exactly the frames written since a cursor,
+with the new cursor. Any scene building a timeline has to consume the sample
+stream without gaps or overlaps.
+
+Do not derive "how much audio arrived since the last frame" from a frame
+duration. It mis-splices the stream on every hiccup, and that exact bug shipped
+on Android once.
 
 ## Scene owned history
 
@@ -281,10 +297,16 @@ VELO_SELFTEST=1     # render every visual offscreen, check pixels, exit
 
 ## Not done
 
-* **Meridian, Waveform, Waveform 3D.** All pure fragment passes, so all
-  portable, but each is 300 to 900 lines. Waveform needs `BandWaveHistory` too,
-  which is another 430 lines of crossovers and AGC, and it is a `StereoScene`,
-  so it wants the stereo ring that was reverted. Its mono path would work today.
+* **Meridian.** NOT a fragment port. It is five programs with their own
+  geometry (sky, terrain grid, river, water, shards), so it needs multiple
+  pipelines, meshes and depth. That does not fit one-pipeline-per-scene and is
+  a different piece of work.
+* **Waveform 3D.** Single pass and shares `WaveHistory`, so it is now mostly
+  the shader. The obvious next one.
+* **The stereo half of Waveform.** Android splits the upper half to Left and
+  the lower to Right when the source carries real stereo. That needs the stereo
+  ring that was reverted, so this port is the mono min/max path only, which is
+  what Android shows for a mono source anyway.
 * **The two meters.** Level Meter and Mechanical Meter need calibration
   decisions about what full scale means on this input path. Android got that
   wrong twice before it was right, so do it deliberately.
