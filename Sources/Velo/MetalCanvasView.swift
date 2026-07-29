@@ -110,6 +110,20 @@ final class MetalCanvasNSView: NSView {
     private var loop: RenderLoop?
     private var observers: [NSObjectProtocol] = []
 
+    /// Not used to drive rendering. Rendering has its own thread, and this only
+    /// exists to state a frame rate the app wants and to measure what the
+    /// display actually gives.
+    ///
+    /// A ProMotion display is adaptive: with nothing telling it otherwise,
+    /// macOS is free to decide the content is not worth 120 Hz and drop the
+    /// panel to a divisor of it. 40 Hz is one of those divisors, and an app
+    /// that renders on its own thread and simply presents drawables never says
+    /// what it wants, so it gets whatever the system feels like. Declaring a
+    /// `preferredFrameRateRange` is how an app asks, and a range whose minimum
+    /// equals its maximum is how it asks firmly.
+    private var displayLink: CADisplayLink?
+    private var lastLinkTime: CFTimeInterval = 0
+
     /// HDR is a toggle, not a mode: OBS capturing an EDR window generally sees
     /// tone-mapped SDR, so this is for direct viewing.
     var hdrEnabled: Bool = false { didSet { applyColorConfiguration() } }
@@ -127,10 +141,35 @@ final class MetalCanvasNSView: NSView {
 
     /// Target frame rate; 0 is uncapped. Streams are usually 60, and there is
     /// no point rendering frames OBS will never sample.
-    var frameCap: Double = 0 { didSet { loop?.frameCap = frameCap } }
+    var frameCap: Double = 0 {
+        didSet {
+            loop?.frameCap = frameCap
+            requestRefreshRate()
+        }
+    }
 
     /// Live frame timing, for the diagnostics overlay.
     var stats: FrameStats? { renderer?.stats }
+
+    /// Ask the display for the rate we intend to render at, and keep asking:
+    /// the panel's own maximum changes when the window moves between screens,
+    /// and the request has to follow the frame cap.
+    private func requestRefreshRate() {
+        guard let displayLink else { return }
+        let panel = Double(window?.screen?.maximumFramesPerSecond ?? 120)
+        let wanted = frameCap > 0 ? min(frameCap, panel) : panel
+        let hz = Float(max(wanted, 1))
+        // Minimum equal to maximum. A range leaves the decision with the
+        // system, and the system's decision is the problem being fixed.
+        displayLink.preferredFrameRateRange =
+            CAFrameRateRange(minimum: hz, maximum: hz, preferred: hz)
+    }
+
+    @objc private func displayLinkFired(_ link: CADisplayLink) {
+        let now = link.timestamp
+        if lastLinkTime > 0 { renderer?.stats.recordLinkInterval(now - lastLinkTime) }
+        lastLinkTime = now
+    }
 
     /// Selected visual. Driven from the controls; the keys write back through
     /// `onSceneChange` so the picker and the canvas cannot disagree.
@@ -258,6 +297,15 @@ final class MetalCanvasNSView: NSView {
         super.viewDidMoveToWindow()
         loop?.stop()
         loop = nil
+        displayLink?.invalidate()
+        displayLink = nil
+        lastLinkTime = 0
+        if window != nil {
+            let link = displayLink(target: self, selector: #selector(displayLinkFired(_:)))
+            displayLink = link
+            requestRefreshRate()
+            link.add(to: .main, forMode: .common)
+        }
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
 

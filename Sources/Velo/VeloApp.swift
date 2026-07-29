@@ -32,6 +32,17 @@ final class AppModel {
     var audioStatus = AudioStatus()
     /// Filled once the canvas exists. See `StatsBox` for why this is not state.
     let statsBox = StatsBox()
+
+    /// Held for the life of the app, to tell macOS this process is not idle.
+    ///
+    /// App Nap and timer coalescing exist to save power on processes that look
+    /// like they are doing nothing much, and an app that renders on its own
+    /// thread and presents drawables can look exactly like that from outside.
+    /// `.latencyCritical` opts out of coalescing, and the user-initiated option
+    /// says the work is on behalf of someone watching it happen.
+    private let activity = ProcessInfo.processInfo.beginActivity(
+        options: [.userInitiated, .latencyCritical],
+        reason: "Live audio visualisation")
     var sceneIndex = 0
     /// `VELO_HDR=1` starts in extended range, so the path can be exercised
     /// without driving the UI.

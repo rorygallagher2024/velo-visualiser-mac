@@ -48,6 +48,9 @@ layers in the way.
   sample.
 * **Fullscreen That Actually Runs Fullscreen:** A borderless window at exactly
   the screen frame, holding 119 fps at 8.4 megapixels with no stalls.
+* **Asks the Display for its Full Rate:** ProMotion panels are adaptive and
+  will happily drop to 40 Hz if nothing says otherwise. The app states the rate
+  it wants and shows what the panel actually gives.
 * **Diagnostics Overlay:** Frame timing, GPU time, the live visual and the
   audio input, on a key. Off by default, since it draws over the canvas.
 * **No Nonsense:** 100% local processing. No data collection. No ads. No network

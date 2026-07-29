@@ -452,7 +452,8 @@ final class FrameStats: @unchecked Sendable {
                     waitSemaphoreMs: mean(semWaits) * 1000,
                     dropped: dropped,
                     hitches: intervals.filter { $0 > 0.05 }.count,
-                    pixels: size
+                    pixels: size,
+                    displayHz: linkInterval > 0 ? 1.0 / linkInterval : 0
                 )
             }
         }

@@ -216,6 +216,34 @@ column of one frame may be half updated, out of 640), and the frequency axis
 interpolation moves from the sampler into four lines of shader. `historyBuffer`
 on the scene protocol, bound at buffer index 2.
 
+## Asking the display for a frame rate
+
+A ProMotion panel is adaptive. With nothing telling it otherwise, macOS decides
+what the content is worth and can drop the panel to a divisor of its maximum:
+40 Hz is 120 divided by three, which is why a frame rate pinned at exactly 40
+is a display decision and not an app one.
+
+An app that renders on its own thread and simply presents drawables never states
+what it wants, so it gets whatever the system chooses. Two things now say
+otherwise:
+
+* A `CADisplayLink` on the canvas whose `preferredFrameRateRange` has its
+  minimum EQUAL to its maximum. A range leaves the decision with the system, and
+  the system's decision is the thing being fixed. It follows the frame cap and
+  the panel's own maximum, and is re-stated when the window changes screen.
+* `ProcessInfo.beginActivity` with `.latencyCritical`, held for the life of the
+  app. App Nap and timer coalescing throttle processes that look idle, and a
+  render thread quietly presenting drawables looks idle from outside.
+
+The display link does NOT drive rendering. It exists to make the request and to
+measure what actually arrives.
+
+**Measure the panel, do not assume it.** `link` in the stats is the real
+interval between display callbacks, and the overlay shows it as "N Hz panel",
+amber below 100. It read 0.00 for most of this project because nothing fed it,
+which is precisely why a panel sitting at 40 Hz was invisible: an app rendering
+happily into a throttled panel looks identical to an app that is slow.
+
 ## Frame pacing
 
 There are two independent throttles: a free drawable, and a free slot of
