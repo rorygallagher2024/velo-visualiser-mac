@@ -29,28 +29,49 @@ needed nothing else.
 
 ## Measured cost
 
-Per scene, at 8.1 megapixels, 120 Hz cap, on an M4 Pro MacBook Pro. The budget
-is 8.3 ms. Figures move by roughly 20 percent run to run with thermal state, so
-treat them as a ranking rather than as constants.
+Per scene, at 8.1 megapixels, 120 Hz cap, on an M4 Pro MacBook Pro. The budget is
+8.3 ms.
 
-| Visual | GPU |
+**Treat this as a ranking, not as constants.** The same scene measured 4.3 ms on
+a warm machine with other work running and 1.0 ms on a cold one. What holds
+across runs is the order and the rough grouping.
+
+| Visual | GPU (cold) |
 |--------|-----|
-| Spectrum Bars | 0.5 ms |
-| Spectrum Analyser | 0.6 ms |
-| Circular Spectrum | 0.7 ms |
-| Pocket LED | 0.8 ms |
-| Laser Array | 1.1 ms |
-| Tunnel | 1.2 ms |
-| Raw Oscilloscope | 1.8 ms |
-| Phosphor Scope | 4.3 ms |
-| Spectral Bloom | 5.8 ms |
-| Quicksilver | 6.0 ms |
-| Aurora Drift | 6.0 ms |
-| 3D LED | 6.1 ms |
+| Spectrum Bars | 0.2 ms |
+| Circular Spectrum | 0.3 ms |
+| Spectrogram | 0.2 ms |
+| Pocket LED | 0.4 ms |
+| Laser Array | 0.4 ms |
+| Tunnel | 0.5 ms |
+| Phosphor Scope | 1.0 ms |
+| Spectrum Analyser | 1.4 ms |
+| Raw Oscilloscope | 1.5 ms |
+| 3D LED | 1.6 ms |
+| Spectral Bloom | 3.6 ms |
+| Aurora Drift | 4.8 ms |
+| Quicksilver | 5.4 ms |
 
-The heavy four are within budget at 8.1 Mpx and will not be at 5K fullscreen,
+The heavy three are comfortable at 8.1 Mpx and will not be at 5K fullscreen,
 which is 14.7 Mpx, roughly 1.8x the pixels. A render scale control is the fix
 when that day comes; `requestDrawableSize` already exists for it.
+
+## Scene owned history
+
+Spectrogram is the only scene that keeps its own GPU resource, and the first
+attempt was a texture written with `replace(region:)`, one column per frame,
+mirroring what Android does with `glTexSubImage2D`.
+
+**That measured 0.8 fps with the GPU at 2.11 ms.** Writing a texture the GPU may
+be reading serialises the queue, and the cost is not visible anywhere in the GPU
+timings because the stall is on the CPU.
+
+The fix is a persistent `MTLBuffer` in shared storage, which the scene writes
+into directly. There is no upload and no API call at all: the CPU writes 128
+floats into the same memory the GPU reads. 119 fps, same hazard profile (one
+column of one frame may be half updated, out of 640), and the frequency axis
+interpolation moves from the sampler into four lines of shader. `historyBuffer`
+on the scene protocol, bound at buffer index 2.
 
 ## Frame pacing
 
@@ -225,12 +246,16 @@ VELO_SCALE=n        # drawable scale
 
 ## Not done
 
+* **Meridian, Waveform, Waveform 3D.** All pure fragment passes, so all
+  portable, but each is 300 to 900 lines. Waveform needs `BandWaveHistory` too,
+  which is another 430 lines of crossovers and AGC, and it is a `StereoScene`,
+  so it wants the stereo ring that was reverted. Its mono path would work today.
+* **The two meters.** Level Meter and Mechanical Meter need calibration
+  decisions about what full scale means on this input path. Android got that
+  wrong twice before it was right, so do it deliberately.
 * **Syphon.** How every VJ app hands frames to OBS: a zero copy IOSurface with
   alpha, and OBS ships the client source already. The pipeline is arranged so
   the final frame lands in a texture that can be published directly.
 * **Render scale control.** Needed before the heavy scenes run at 5K.
 * **Scene categories.** Twelve visuals and ten digit keys. Android solved this
   with Instruments / Reactive / Immersive filters.
-* **The meters.** Level Meter and Mechanical Meter both need calibration
-  decisions about what full scale means on this input path. Android got that
-  wrong twice before it was right, so it is worth doing deliberately.

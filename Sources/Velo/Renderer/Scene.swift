@@ -1,4 +1,5 @@
 import Foundation
+import Metal
 
 /// One visual.
 ///
@@ -14,9 +15,23 @@ protocol VeloScene: AnyObject {
     func update(audio: AudioEngine, dt: Float)
     /// Write this frame's values into the shared scene buffer (buffer index 1).
     func writeData(into pointer: UnsafeMutableRawPointer)
+    /// Build any GPU resources of this scene's own. Called once, at startup.
+    func prepare(device: MTLDevice)
+    /// A persistent buffer this scene owns and writes into directly, bound at
+    /// buffer index 2.
+    ///
+    /// For history too large to hand over every frame. Shared storage, so the
+    /// scene writes straight into the memory the GPU reads and there is no
+    /// upload at all. This exists instead of a texture because `replace(region:)`
+    /// on a texture the GPU may be reading serialises the queue: measured at
+    /// 0.8 fps with the GPU sitting at 2.1 ms.
+    var historyBuffer: MTLBuffer? { get }
 }
 
 extension VeloScene {
+    func prepare(device: MTLDevice) {}
+    var historyBuffer: MTLBuffer? { nil }
+
     /// Every scene shares one vertex stage: a fullscreen triangle generated from
     /// `vertex_id` alone. No vertex buffer, and no seam down the diagonal that a
     /// two-triangle quad would have.

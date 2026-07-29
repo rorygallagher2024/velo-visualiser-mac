@@ -30,10 +30,10 @@ layers in the way.
    capture source at the window, or run it fullscreen on a projector or a second
    display.
 
-3. **Watching what your mix is actually doing.** Over half the visuals are
+3. **Watching what your mix is actually doing.** Most of the visuals are
    instruments rather than decoration: a real third octave analyser, two
-   oscilloscopes and a peak reading LED panel, all fed from the same low latency
-   capture.
+   oscilloscopes, a scrolling spectrogram and a peak reading LED panel, all fed
+   from the same low latency capture.
 
 ## Core Features
 
@@ -42,8 +42,8 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Twelve Visuals:** Seven instruments and five generative scenes, all ported
-  from the Android app.
+* **Thirteen Visuals:** Eight instruments and five generative scenes, all
+  ported from the Android app.
 * **Built to be Captured:** No on screen chrome, keyboard only control, and a
   frame rate cap so you are not rendering frames a 60 fps stream will never
   sample.
@@ -70,6 +70,9 @@ layers in the way.
 * **Spectrum Bars.** The classic coloured bars with gravity peak caps.
 * **3D LED.** The LED panel as an actual object, lenses and chassis, with a
   camera drifting around it.
+* **Spectrogram.** A scrolling heatmap of frequency against time. The one visual
+  with memory, so you watch a beat's structure scroll away rather than only
+  seeing the present.
 
 **Generative**, which are driven by the sound rather than measuring it:
 

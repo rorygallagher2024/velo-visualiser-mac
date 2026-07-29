@@ -102,6 +102,7 @@ final class Renderer: @unchecked Sendable {
             bandBuffers.append(b)
         }
 
+        scenes.forEach { $0.prepare(device: device) }
         guard buildPipeline(for: .bgra8Unorm) else { return nil }
     }
 
@@ -221,6 +222,9 @@ final class Renderer: @unchecked Sendable {
             encoder.setRenderPipelineState(pipeline)
             argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
             argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+            if let history = scene.historyBuffer {
+                argumentTable.setAddress(history.gpuAddress, index: 2)
+            }
             encoder.setArgumentTable(argumentTable, stages: .fragment)
             encoder.setArgumentTable(argumentTable, stages: .vertex)
             // Fullscreen triangle: three shader-generated vertices, no buffer,
