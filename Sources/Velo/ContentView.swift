@@ -83,13 +83,14 @@ private struct HintBar: View {
 /// without it degrades to something deliberate rather than to a blank gap.
 private struct Wordmark: View {
     var body: some View {
-        if let url = Bundle.main.url(forResource: "velo_logo", withExtension: "png"),
+        if let url = Bundle.main.url(forResource: "app_icon_512", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFit()
                 .frame(height: 30)
+                .clipShape(RoundedRectangle(cornerRadius: 6.7))
                 .opacity(0.92)
         } else {
             Text("VELO")
@@ -181,6 +182,25 @@ private struct ControlPanel: View {
                         + "P key. It draws over the canvas, so it will appear in a capture.")
             }
 
+            Divider().overlay(.white.opacity(0.12))
+
+            section("About")
+            VStack(alignment: .leading, spacing: 6) {
+                Button("About & Licenses") {
+                    model.showingAbout = true
+                }
+                .buttonStyle(.link)
+                .font(Velo.light(14))
+                .foregroundStyle(.blue)
+
+                Button("Privacy Policy") {
+                    model.showingPrivacy = true
+                }
+                .buttonStyle(.link)
+                .font(Velo.light(14))
+                .foregroundStyle(.blue)
+            }
+
             Spacer(minLength: 0)
             Text("M close · F fullscreen · H HDR · ← → visual")
                 .font(Velo.label(10))
@@ -198,6 +218,12 @@ private struct ControlPanel: View {
         }
         .onChange(of: model.selectedDeviceUID) { _, uid in
             model.audio.start(deviceUID: uid)
+        }
+        .sheet(isPresented: $model.showingAbout) {
+            AboutView()
+        }
+        .sheet(isPresented: $model.showingPrivacy) {
+            PrivacyView()
         }
     }
 

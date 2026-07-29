@@ -1,12 +1,42 @@
 import Foundation
 import Metal
 
+/// What a scene draws, and how its fragments combine.
+///
+/// Almost every visual is one fullscreen triangle with the fragment shader
+/// doing all the work, which is the default. Particle fields are the exception,
+/// and the reason this exists: a star field is thousands of discrete objects
+/// each smaller than a pixel, and hunting for them with a per-pixel hash grid
+/// is wrong twice over. It aliases — a sub-pixel point sampled at pixel centres
+/// snaps into hard blocks rather than fading — and it pays for every empty cell
+/// it walks. Drawn as point sprites the same field costs O(stars) instead of
+/// O(pixels x layers), and each sprite is an analytic shape that stays smooth
+/// at any canvas size.
+struct SceneDraw {
+    var primitive: MTLPrimitiveType = .triangle
+    var vertexCount: Int = 3
+    /// Additive blending, so overlapping glows accumulate instead of the last
+    /// one drawn winning. Depth in a particle field reads from that stacking.
+    var additive: Bool = false
+
+    static let fullscreenTriangle = SceneDraw()
+
+    /// `count` point sprites, additively blended. The vertex shader derives
+    /// each particle from its own `vertex_id`, so there is still no vertex
+    /// buffer and nothing to upload per frame.
+    static func points(_ count: Int) -> SceneDraw {
+        SceneDraw(primitive: .point, vertexCount: count, additive: true)
+    }
+}
+
 /// One visual.
 ///
 /// A scene owns its shader and its own ballistics, and fills a single data
 /// buffer the fragment shader reads. Keeping the contract this narrow means
 /// adding a visual touches exactly one new file, as on Android.
 protocol VeloScene: AnyObject {
+    /// What to draw. Defaults to the fullscreen triangle every shader scene uses.
+    var draw: SceneDraw { get }
     /// Shown in the controls and used for the window subtitle.
     var name: String { get }
     /// Metal Shading Language source. Must define `veloVertex` and `veloFragment`.
@@ -31,6 +61,7 @@ protocol VeloScene: AnyObject {
 extension VeloScene {
     func prepare(device: MTLDevice) {}
     var historyBuffer: MTLBuffer? { nil }
+    var draw: SceneDraw { .fullscreenTriangle }
 
     /// Every scene shares one vertex stage: a fullscreen triangle generated from
     /// `vertex_id` alone. No vertex buffer, and no seam down the diagonal that a

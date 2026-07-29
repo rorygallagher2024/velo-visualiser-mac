@@ -220,7 +220,19 @@ final class Renderer: @unchecked Sendable {
         let descriptor = MTL4RenderPipelineDescriptor()
         descriptor.vertexFunctionDescriptor = vertexDescriptor
         descriptor.fragmentFunctionDescriptor = fragmentDescriptor
-        descriptor.colorAttachments[0].pixelFormat = format
+
+        guard let attachment = descriptor.colorAttachments[0] else { return false }
+        attachment.pixelFormat = format
+        if scenes[sceneIndex].draw.additive {
+            attachment.blendingState = .enabled
+            attachment.sourceRGBBlendFactor = .one
+            attachment.destinationRGBBlendFactor = .one
+            attachment.rgbBlendOperation = .add
+            // Leave the cleared alpha alone. The layer is opaque, and on a float
+            // HDR format an accumulating alpha is not clamped for us.
+            attachment.sourceAlphaBlendFactor = .zero
+            attachment.destinationAlphaBlendFactor = .one
+        }
 
         guard let state = try? compiler.makeRenderPipelineState(descriptor: descriptor)
         else {
@@ -272,7 +284,9 @@ final class Renderer: @unchecked Sendable {
             }
             encoder.setArgumentTable(argumentTable, stages: .fragment)
             encoder.setArgumentTable(argumentTable, stages: .vertex)
-            encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
+            let draw = scene.draw
+            encoder.drawPrimitives(
+                primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
             encoder.endEncoding()
         }
         commandBuffer.endCommandBuffer()
@@ -354,9 +368,12 @@ final class Renderer: @unchecked Sendable {
             }
             encoder.setArgumentTable(argumentTable, stages: .fragment)
             encoder.setArgumentTable(argumentTable, stages: .vertex)
-            // Fullscreen triangle: three shader-generated vertices, no buffer,
-            // and no seam down the diagonal a two-triangle quad would have.
-            encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
+            // Shader-generated vertices, no vertex buffer: three for a
+            // fullscreen triangle (no seam down the diagonal a two-triangle
+            // quad would have), or one per particle for a point-sprite scene.
+            let draw = scene.draw
+            encoder.drawPrimitives(
+                primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
             encoder.endEncoding()
         }
         commandBuffer.endCommandBuffer()

@@ -1,5 +1,8 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Metal
+import UniformTypeIdentifiers
 
 /// Renders every visual offscreen and looks at the pixels.
 ///
@@ -13,7 +16,17 @@ import Metal
 /// can still be ugly or wrong, which no automated check will catch, but it can
 /// no longer be *empty* without saying so.
 ///
-/// Run with `VELO_SELFTEST=1`.
+/// Run with `VELO_SELFTEST=1`. Two optional knobs:
+///
+/// * `VELO_SELFTEST_SIZE=3840x2160` renders at another size. Fragment cost is
+///   very nearly linear in pixel count, so a figure measured at 1080p says
+///   little about a scene running fullscreen on a 4K panel — a Starscape that
+///   looked comfortable at 5 ms here was really costing four times that.
+/// * `VELO_SELFTEST_DUMP=<dir>` writes each scene's frame out as a PNG. The
+///   statistics below say a scene is not blank and not deaf; they cannot say it
+///   is not *ugly*. A star field that aliases into hard blocks scores exactly
+///   as well as one that does not, so the only way to catch that without a
+///   person at the screen is to look at the pixels.
 enum SelfTest {
 
     /// Anything below this fraction of lit pixels is reported as a failure.
@@ -39,11 +52,12 @@ enum SelfTest {
             exit(1)
         }
 
-        // Fixed, and stated in the output. Window size is the single biggest
-        // input to fragment cost, and a table measured across a resize is
-        // worthless: one run here reported 8.1 Mpx at the top and 1.7 Mpx at
+        // Fixed for the run, and stated in the output. Window size is the single
+        // biggest input to fragment cost, and a table measured across a resize
+        // is worthless: one run here reported 8.1 Mpx at the top and 1.7 Mpx at
         // the bottom because the window was dragged mid-measurement.
-        let width = 1920, height = 1080
+        let (width, height) = requestedSize()
+        let dumpDirectory = ProcessInfo.processInfo.environment["VELO_SELFTEST_DUMP"]
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
         descriptor.usage = [.renderTarget, .shaderRead]
@@ -80,8 +94,18 @@ enum SelfTest {
             let (coverage, mean, _) = inspect(target, width: width, height: height)
             let reacts = difference(target, quietTarget, width: width, height: height)
 
+            if let dumpDirectory {
+                dump(target, width: width, height: height, directory: dumpDirectory,
+                     file: String(format: "%02d-%@.png", index, name))
+            }
+
+            // Scaled to the render height. A one-pixel trace covers 1/height of
+            // the frame however tall it is, so a fixed floor calls the Raw
+            // Oscilloscope blank at 4K purely for being rendered larger.
+            let floorCoverage = minimumCoverage * 1080 / Double(height)
+
             var verdict = "ok"
-            if coverage < minimumCoverage { verdict = "BLANK"; failures += 1 }
+            if coverage < floorCoverage { verdict = "BLANK"; failures += 1 }
             else if reacts < minimumReaction { verdict = "DEAF"; failures += 1 }
 
             print(String(format: "[selftest] %-19s lit %6.2f%%  mean %.4f  reacts %.4f  gpu %5.2f ms  %@",
@@ -93,6 +117,48 @@ enum SelfTest {
             ? "all visuals draw, and all react to audio"
             : "\(failures) failed"))
         exit(failures == 0 ? 0 : 1)
+    }
+
+    /// `VELO_SELFTEST_SIZE=WxH`, or 1080p.
+    private static func requestedSize() -> (Int, Int) {
+        guard let raw = ProcessInfo.processInfo.environment["VELO_SELFTEST_SIZE"] else {
+            return (1920, 1080)
+        }
+        let parts = raw.lowercased().split(separator: "x").compactMap { Int($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return (1920, 1080) }
+        return (parts[0], parts[1])
+    }
+
+    /// Write one render out as a PNG, so a person (or a later session) can look
+    /// at what the numbers only summarise.
+    private static func dump(
+        _ texture: MTLTexture, width: Int, height: Int, directory: String, file: String
+    ) {
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes { raw in
+            texture.getBytes(raw.baseAddress!, bytesPerRow: width * 4,
+                             from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        }
+
+        // bgra8Unorm is ARGB read little-endian, and the alpha carries nothing
+        // here, so it is declared as skipped rather than premultiplied.
+        let info = CGBitmapInfo.byteOrder32Little.rawValue
+            | CGImageAlphaInfo.noneSkipFirst.rawValue
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+              let image = CGImage(
+                width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider,
+                decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        else { return }
+
+        try? FileManager.default.createDirectory(
+            atPath: directory, withIntermediateDirectories: true)
+        let url = URL(fileURLWithPath: directory).appendingPathComponent(file) as CFURL
+        guard let destination = CGImageDestinationCreateWithURL(
+            url, UTType.png.identifier as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationFinalize(destination)
     }
 
     /// Mean absolute luminance difference between two renders.

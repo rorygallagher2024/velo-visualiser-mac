@@ -42,7 +42,7 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Seventeen Visuals:** Eleven instruments and six generative scenes.
+* **Twenty-Seven Visuals:** Eleven instruments and sixteen generative scenes.
 * **Built to be Captured:** No on screen chrome, keyboard only control, and a
   frame rate cap so you are not rendering frames a 60 fps stream will never
   sample.
@@ -91,6 +91,10 @@ staging of the same data.
 
 **Generative**, which are driven by the sound rather than measuring it:
 
+* **Beat Pulse.** A warm core that slams open on the beat with expanding
+  shockwave rings. Simple and unmissable.
+* **Starscape.** A hyperspace star field flying toward you. Bass accelerates
+  the warp, beats flash a subset of stars in vivid colour.
 * **Tunnel.** An infinite hexagonal corridor with bass ripples travelling away
   down it.
 * **Laser Array.** Beams out of a vanishing point, the way a rig full of
@@ -99,8 +103,23 @@ staging of the same data.
 * **Aurora Drift.** Curtains of light over a parallax starfield.
 * **Quicksilver.** A mass of liquid metal, raymarched, reflecting a room that is
   also the background.
+* **Electric Iris.** A volumetric iris: gaseous nebula around a black pupil that
+  dilates with the bass, with SDF lightning arcs on the treble.
 * **Nebula.** A volumetric liquid nebula field with audio-reactive FBM turbulence,
   colour shifts, and a twinkling starfield.
+* **Phyllotaxis Bloom.** A sunflower spiral where each dot owns one FFT bin,
+  centre to rim mapping lows to highs. The bloom breathes with the spectrum.
+* **Beat Fireworks.** Bass transients launch radial bursts of sparks that arc
+  under gravity and fade, over a twinkling star field.
+* **Chromatic Dots.** Fifteen thousand particles in five colours, one per musical
+  element: bass, mid, treble, loudness, beat. Each class appears and disappears
+  with its own energy.
+* **Crystal Swarm.** A 32,000-particle lattice that breathes and rotates. Bass
+  drives waves through the grid, beats bloom the points into bright flashes,
+  and the colour palette shifts spatially across the cloud.
+* **Particle Dust.** A gentle cloud of drifting particles.
+* **Ethereal Ribbons.** Flowing ribbons of light, audio-reactive.
+* **Abstract Waveform.** A stylised waveform rendering.
 
 ## Controls
 

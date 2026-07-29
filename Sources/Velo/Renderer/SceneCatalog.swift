@@ -20,12 +20,22 @@ enum SceneCatalog {
         "Waveform 3D",
         "Waveform 3D Void",
         // Generative: driven by band energy rather than measuring it.
+        "Beat Pulse",
+        "Starscape",
         "Tunnel",
         "Laser Array",
         "Spectral Bloom",
         "Aurora Drift",
         "Quicksilver",
+        "Electric Iris",
         "Nebula",
+        "Phyllotaxis Bloom",
+        "Beat Fireworks",
+        "Chromatic Dots",
+        "Crystal Swarm",
+        "Particle Dust",
+        "Ethereal Ribbons",
+        "Abstract Waveform",
     ]
 
     static func makeAll() -> [VeloScene] {
@@ -41,12 +51,22 @@ enum SceneCatalog {
             WaveformScene(),
             Waveform3DScene(style: .room),
             Waveform3DScene(style: .void),
+            BeatPulseScene(),
+            StarscapeScene(),
             TunnelScene(),
             LaserArrayScene(),
             SpectralBloomScene(),
             AuroraDriftScene(),
             QuicksilverScene(),
+            ElectricIrisScene(),
             NebulaScene(),
+            PhyllotaxisScene(),
+            BeatFireworksScene(),
+            ChromaticDotsScene(),
+            CrystalSwarmScene(),
+            ParticleDustScene(),
+            EtherealRibbonsScene(),
+            AbstractWaveformScene(),
         ]
     }
 
