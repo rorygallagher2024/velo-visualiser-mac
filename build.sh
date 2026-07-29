@@ -22,6 +22,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Velo"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
+cp Resources/velo_logo.png "$APP/Contents/Resources/"
 
 # Icon: build an .icns from the shared 512 logo so the Mac app carries the same
 # mark as the Android one.

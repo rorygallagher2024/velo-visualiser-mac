@@ -63,6 +63,19 @@ of buffers. SwiftUI polls the snapshot on a timer rather than being pushed from
 the render thread: driving a view hierarchy at 120 Hz spends more time laying
 out text than rendering.
 
+Two traps, both hit on the first attempt.
+
+The stats reach the view through a plain reference box, not SwiftUI state. The
+obvious route was a `@State` assigned from `makeNSView`, but that runs DURING a
+view update, where SwiftUI discards the write. The overlay read a default
+snapshot forever and showed a confident 0.0 fps, which looks exactly like a
+working overlay reporting a dead renderer.
+
+The level meter is in dB, not linear. Five linear blocks spend their whole scale
+on the top few dB: music at a healthy -14 dBFS is 0.2 linear and lights exactly
+one block, as does anything from -60 up to -14. It is now -60 to 0 dBFS on a
+fixed scale, with the number shown next to the blocks.
+
 The fields are chosen to separate faults that look identical from outside. A low
 frame rate with the GPU idle is a stall, with the GPU busy it is fill cost, and
 the pixel count says which. Hitches separate one long freeze from a drizzle of

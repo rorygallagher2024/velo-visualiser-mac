@@ -13,7 +13,20 @@ struct AudioStatus: Sendable, Equatable {
     var sampleRate: Double = 0
     var channels = 0
     var bufferFrames = 0
+    /// Peak of the recent window, linear.
     var level: Float = 0
+
+    /// The same peak in dBFS, which is the only honest way to show it.
+    ///
+    /// A linear bar spends its whole scale on the top few dB: music sitting at
+    /// a healthy -14 dBFS is 0.2 linear, which on five linear blocks lights
+    /// exactly one. The ear is logarithmic and so is every meter worth reading.
+    var levelDb: Float { 20 * log10f(max(level, 1e-5)) }
+
+    /// -60 dBFS to 0, matching the fixed scale the meters use. Not auto-ranged:
+    /// a meter that rescales itself cannot be read against anything.
+    var levelFraction: Float { min(max((levelDb + 60) / 60, 0), 1) }
+
     var silent: Bool { level < 0.0005 }
 
     var format: String {

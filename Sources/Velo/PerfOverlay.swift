@@ -13,6 +13,22 @@ struct PerfSnapshot: Sendable, Equatable {
     var pixels = 0
 }
 
+/// Hands the render thread's stats to the view layer.
+///
+/// A plain reference type on purpose. The obvious route was a SwiftUI `@State`
+/// assigned from `makeNSView`, but that runs DURING a view update, where
+/// SwiftUI discards the write. The overlay read a default snapshot forever and
+/// showed a confident 0.0 fps. A box can be filled whenever the view is built,
+/// because nothing about it is part of the update cycle.
+final class StatsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: FrameStats?
+    var stats: FrameStats? {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
+    }
+}
+
 /// The diagnostics overlay, modelled on the Android app's.
 ///
 /// Off by default and on a key, because the canvas is meant to be pure output:
@@ -69,7 +85,7 @@ struct PerfOverlay: View {
             row("level", audio.silent ? "silent" : meter)
         }
         .padding(14)
-        .frame(width: 250, alignment: .leading)
+        .frame(width: 296, alignment: .leading)
         .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.10), lineWidth: 1)
@@ -93,11 +109,14 @@ struct PerfOverlay: View {
 
     private func ms(_ v: Double) -> String { String(format: "%.2f ms", v) }
 
-    /// Five blocks, so a glance says whether anything is arriving at all.
+    /// The number, then five blocks. The blocks answer "is anything arriving"
+    /// at a glance; the dB figure is what you actually need when the answer is
+    /// "yes, but not enough".
     private var meter: String {
-        let filled = min(Int(audio.level * 5) + 1, 5)
-        return String(repeating: "▮", count: filled)
-             + String(repeating: "▯", count: 5 - filled)
+        let filled = min(Int((audio.levelFraction * 5).rounded(.up)), 5)
+        let blocks = String(repeating: "▮", count: filled)
+                   + String(repeating: "▯", count: 5 - filled)
+        return String(format: "%+.0f dB %@", audio.levelDb, blocks)
     }
 
     private func row(

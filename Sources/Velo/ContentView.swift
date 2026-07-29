@@ -10,7 +10,6 @@ struct ContentView: View {
     /// every frame, and driving SwiftUI at that rate would spend more time
     /// laying out text than rendering. Four times a second is live enough to
     /// watch and cheap enough to ignore.
-    @State private var stats: FrameStats?
     private let tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -21,7 +20,7 @@ struct ContentView: View {
                 onToggleMenu: { model.menuOpen.toggle() },
                 onToggleHDR: { model.hdrEnabled.toggle() },
                 onTogglePerf: { model.perfOverlay.toggle() },
-                onStats: { stats = $0 },
+                onStats: { model.statsBox.stats = $0 },
                 nativeInFullScreen: model.nativeInFullScreen,
                 frameCap: model.frameCap,
                 sceneIndex: model.sceneIndex,
@@ -57,7 +56,7 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.18), value: model.perfOverlay)
         .onReceive(tick) { _ in
             guard model.perfOverlay else { return }
-            if let stats { model.perf = stats.snapshot }
+            if let stats = model.statsBox.stats { model.perf = stats.snapshot }
             model.audioStatus = model.audio.status()
         }
     }
@@ -81,6 +80,27 @@ private struct HintBar: View {
     }
 }
 
+/// The Velo mark. Falls back to type if the image is missing, so a bundle
+/// without it degrades to something deliberate rather than to a blank gap.
+private struct Wordmark: View {
+    var body: some View {
+        if let url = Bundle.main.url(forResource: "velo_logo", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(height: 30)
+                .opacity(0.92)
+        } else {
+            Text("VELO")
+                .font(Velo.display(22))
+                .tracking(5)
+                .foregroundStyle(.white.opacity(0.9))
+        }
+    }
+}
+
 /// Settings, modelled on the Android sheet: dark panel, small caps section
 /// headers, captions beneath their control.
 ///
@@ -92,16 +112,7 @@ private struct ControlPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("VELO")
-                .font(Velo.display(22))
-                .tracking(5)
-                .foregroundStyle(.white.opacity(0.9))
-                .padding(.bottom, 2)
-            Text("Visualiser")
-                .font(Velo.light(11))
-                .tracking(2.2)
-                .foregroundStyle(.white.opacity(0.35))
-                .padding(.bottom, 16)
+            Wordmark().padding(.bottom, 18)
 
             section("Visual")
             VStack(alignment: .leading, spacing: 6) {

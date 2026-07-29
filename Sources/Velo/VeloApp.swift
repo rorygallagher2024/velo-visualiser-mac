@@ -30,6 +30,8 @@ final class AppModel {
     /// Polled from the render thread's stats at 4 Hz.
     var perf = PerfSnapshot()
     var audioStatus = AudioStatus()
+    /// Filled once the canvas exists. See `StatsBox` for why this is not state.
+    let statsBox = StatsBox()
     var sceneIndex = 0
     /// `VELO_HDR=1` starts in extended range, so the path can be exercised
     /// without driving the UI.
