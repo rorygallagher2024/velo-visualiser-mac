@@ -23,6 +23,7 @@ struct ContentView: View {
                 onStats: { model.statsBox.stats = $0 },
                 nativeInFullScreen: model.nativeInFullScreen,
                 frameCap: model.frameCap,
+                borderlessFullScreen: model.borderlessFullScreen,
                 sceneIndex: model.sceneIndex,
                 onSceneChange: { model.sceneIndex = $0 }
             )
@@ -180,6 +181,14 @@ private struct ControlPanel: View {
                     .toggleStyle(.switch)
                 caption("Off by default. Switching the display mode costs more frame rate "
                         + "than the scaled desktop does, so only turn it on if it measures better.")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("Borderless fullscreen", isOn: $model.borderlessFullScreen)
+                    .toggleStyle(.switch)
+                caption("A window covering the screen rather than a macOS fullscreen "
+                        + "Space. Measured faster here, 119 fps against 80. Turn it off "
+                        + "if a Space performs better on your display.")
             }
 
             VStack(alignment: .leading, spacing: 6) {

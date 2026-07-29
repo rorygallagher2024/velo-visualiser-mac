@@ -300,7 +300,15 @@ final class MetalCanvasNSView: NSView {
         displayLink?.invalidate()
         displayLink = nil
         lastLinkTime = 0
-        if window != nil {
+        if let window {
+            for name in [NSWindow.didEnterFullScreenNotification,
+                         NSWindow.didExitFullScreenNotification] {
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: window, queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.fullScreenDidChange() }
+                })
+            }
             let link = displayLink(target: self, selector: #selector(displayLinkFired(_:)))
             displayLink = link
             requestRefreshRate()
@@ -337,70 +345,98 @@ final class MetalCanvasNSView: NSView {
     // with a gap, 120 fps covering the screen). Taking a borderless window at
     // exactly the screen frame is what games do, and it is deterministic.
 
-    private var savedFrame: NSRect?
-    private var savedStyle: NSWindow.StyleMask?
-    var isFullScreen: Bool { savedFrame != nil }
-
-    func toggleFullScreen() {
-        isFullScreen ? exitFullScreen() : enterFullScreen()
+    var isFullScreen: Bool {
+        savedFrame != nil || (window?.styleMask.contains(.fullScreen) ?? false)
     }
 
-    private func enterFullScreen() {
-        guard let window, let screen = window.screen, savedFrame == nil else { return }
-        savedFrame = window.frame
-        savedStyle = window.styleMask
+    /// Native fullscreen, not a borderless window at the screen frame.
+    ///
+    /// This was the other way round, on the reasoning that a borderless window
+    /// is what games do and is deterministic. It is deterministic, and it is
+    /// also still an ORDINARY COMPOSITED WINDOW as far as the system is
+    /// concerned. Covering the screen is not the same as owning it: the window
+    /// does not get the direct path, and on an adaptive panel the compositor
+    /// stays free to decide the content does not warrant the full refresh rate.
+    /// That is how the app ended up pinned at exactly 40 Hz, which is 120
+    /// divided by three.
+    ///
+    /// Native fullscreen puts the window in a Space of its own, where it is the
+    /// only thing on the display and can be scanned out directly.
+    ///
+    /// The objection that sent this the other way is real but fixable, and was
+    /// the whole of the complaint: without `fullSizeContentView` the content
+    /// view is inset by the titlebar, which left the canvas 33 points short.
+    /// `true` uses a borderless window at the screen frame instead of a Space.
+    /// Which kind of fullscreen `F` gives.
+    ///
+    /// Defaults to the borderless window, which is not the "proper" answer and
+    /// is measurably the faster one on this hardware. See `IMPLEMENTATION.md`.
+    var borderlessFullScreen = true
+    private var savedFrame: NSRect?
 
-        let verbose = ProcessInfo.processInfo.environment["VELO_STATS"] != nil
-        if nativeInFullScreen {
-            DisplayMode.engageNative(on: screen, verbose: verbose)
+    func toggleFullScreen() {
+        guard let window else { return }
+        if borderlessFullScreen { toggleBorderless(window); return }
+        // Activate first. A fullscreen Space belonging to an application the
+        // system does not consider active is throttled hard, and the app is
+        // frequently not active at the moment the key is pressed.
+        NSApp.activate()
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.toggleFullScreen(nil)
+    }
+
+    /// A borderless window at exactly the screen frame. Not a Space, so it
+    /// stays an ordinary composited window, which on this hardware is FASTER
+    /// than the direct path even though it should not be. Kept as an option
+    /// because that result is machine-specific and the direct path is the
+    /// correct thing to want.
+    private func toggleBorderless(_ window: NSWindow) {
+        if let frame = savedFrame {
+            savedFrame = nil
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.level = .normal
+            NSApp.presentationOptions = []
+            DisplayMode.restore()
+            DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
+                    window.setFrame(frame, display: true)
+                    window.makeFirstResponder(self)
+                }
+            }
+            return
         }
-        // Activate FIRST. Presentation options only take effect for the active
-        // application, and without them macOS keeps the menu bar and shrinks
-        // the borderless window 32 pt clear of it. That is a real resize, and
-        // it repeats every time focus flickers.
+        savedFrame = window.frame
         NSApp.activate()
         NSApp.presentationOptions = [.hideDock, .hideMenuBar]
         window.styleMask = [.borderless]
-        // Above the menu bar, not merely hiding it. AppKit constrains an
-        // ordinary window to stay clear of the menu bar, so whenever the bar
-        // came back the window was shoved 32 pt shorter and the drawable pool
-        // was reallocated. Measured: the height flapping between 1964 and 1900
-        // pixels several times a second, each flap a ~268 ms stall. A window
-        // at menu-bar level is not constrained, so the frame simply holds.
         window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
-
-        // The screen's frame only reflects a mode change on the next main-queue
-        // turn, so the frame is taken after the hop rather than from the stale
-        // value we already have.
         DispatchQueue.main.async { [weak self] in
-            guard let self, let window = self.window,
-                  let screen = window.screen ?? NSScreen.main else { return }
+            guard let self, let screen = window.screen ?? NSScreen.main else { return }
             window.setFrame(screen.frame, display: true)
             window.makeKeyAndOrderFront(nil)
             window.makeFirstResponder(self)
+            self.requestRefreshRate()
         }
     }
 
-    private func exitFullScreen() {
-        guard let window, let frame = savedFrame else { return }
-        window.styleMask = savedStyle ?? [.titled, .closable, .miniaturizable, .resizable]
-        window.level = .normal
-        NSApp.presentationOptions = []
-        DisplayMode.restore()
-        savedFrame = nil
-        savedStyle = nil
-        // Two hops, for the same reason entering needs one: a display mode
-        // change does not reach `NSScreen` until a later main-queue turn.
-        // Restoring the frame before that lands applies the saved rectangle in
-        // the wrong coordinate space, and AppKit then spends the next several
-        // seconds correcting it, reallocating the drawable pool on every step.
-        // That is why the stall used to outlive fullscreen itself.
-        DispatchQueue.main.async {
-            DispatchQueue.main.async { [weak self, window] in
-                window.setFrame(frame, display: true)
-                window.makeFirstResponder(self)
-            }
+    /// AppKit owns the transition now, so anything that has to be true in
+    /// fullscreen is applied when it reports the change rather than around a
+    /// frame the app set itself.
+    @objc func fullScreenDidChange() {
+        guard let window else { return }
+        if isFullScreen, nativeInFullScreen, let screen = window.screen {
+            DisplayMode.engageNative(
+                on: screen,
+                verbose: ProcessInfo.processInfo.environment["VELO_STATS"] != nil)
+        } else if !isFullScreen {
+            DisplayMode.restore()
         }
+        if isFullScreen { NSApp.activate() }
+        window.makeFirstResponder(self)
+        requestRefreshRate()
+        updateDrawableSize()
     }
 
     /// Safety net: put the display and the menu bar back if the app quits while
@@ -481,6 +517,7 @@ struct MetalCanvasView: NSViewRepresentable {
     var onStats: (FrameStats) -> Void
     var nativeInFullScreen: Bool
     var frameCap: Double
+    var borderlessFullScreen: Bool
     var sceneIndex: Int
     var onSceneChange: (Int) -> Void
 
@@ -494,6 +531,7 @@ struct MetalCanvasView: NSViewRepresentable {
         if let stats = view.stats { onStats(stats) }
         view.nativeInFullScreen = nativeInFullScreen
         view.frameCap = frameCap
+        view.borderlessFullScreen = borderlessFullScreen
         view.sceneIndex = sceneIndex
         view.onSceneChange = onSceneChange
         return view
@@ -507,6 +545,7 @@ struct MetalCanvasView: NSViewRepresentable {
         nsView.onTogglePerf = onTogglePerf
         nsView.nativeInFullScreen = nativeInFullScreen
         nsView.frameCap = frameCap
+        nsView.borderlessFullScreen = borderlessFullScreen
         nsView.sceneIndex = sceneIndex
         nsView.onSceneChange = onSceneChange
     }

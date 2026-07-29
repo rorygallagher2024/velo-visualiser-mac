@@ -47,7 +47,8 @@ layers in the way.
   frame rate cap so you are not rendering frames a 60 fps stream will never
   sample.
 * **Fullscreen That Actually Runs Fullscreen:** A borderless window at exactly
-  the screen frame, holding 119 fps at 8.4 megapixels with no stalls.
+  the screen frame, holding 119 fps at 8.4 megapixels with no stalls. A macOS
+  fullscreen Space is available as a setting, and is slower.
 * **Asks the Display for its Full Rate:** ProMotion panels are adaptive and
   will happily drop to 40 Hz if nothing says otherwise. The app states the rate
   it wants and shows what the panel actually gives.

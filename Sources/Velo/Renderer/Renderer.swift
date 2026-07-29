@@ -29,12 +29,30 @@ final class Renderer: @unchecked Sendable {
     /// Two, matching `CAMetalLayer.maximumDrawableCount`. Any mismatch means
     /// one of the two throttles is dead weight and the other blocks early.
     ///
-    /// Two rather than three deliberately. A third drawable buys smoothness
-    /// when the GPU occasionally overruns the vsync interval, and costs a whole
-    /// frame of presentation latency to do it — 8.3 ms at 120 Hz, on every
-    /// frame, forever. The GPU here runs 0.7-3.4 ms against an 8.3 ms budget,
-    /// so there is no overrun to absorb and the third frame is pure delay.
-    static let maxFramesInFlight = 2
+    /// Three, not two.
+    ///
+    /// Two was chosen for latency, on the reasoning that a third drawable only
+    /// absorbs GPU overruns and this GPU never overruns. That was measured in a
+    /// WINDOW, where it is true. In a fullscreen Space the display holds a
+    /// drawable for longer, and two is not enough to keep the pipeline fed:
+    ///
+    ///     2 drawables, fullscreen:  40.0 fps, waitDrawable 24.9 ms
+    ///     3 drawables, fullscreen:  80.1 fps, waitDrawable 12.3 ms
+    ///
+    /// One frame of latency against half the frame rate is not a close call.
+    ///
+    /// Three is also the ceiling. `CAMetalLayer` accepts 2 or 3 and nothing
+    /// else, so the Space path cannot be pushed past 80 fps this way: the
+    /// relationship measured exactly (N - 1) x 40 fps, and there is no N = 4.
+    static let maxFramesInFlight = {
+        if let v = ProcessInfo.processInfo.environment["VELO_FLIGHT"], let n = Int(v) {
+            // Clamped hard. CAMetalLayer accepts 2 or 3 drawables and nothing
+            // else, and a semaphore permitting more waits forever for a
+            // drawable that cannot exist: at 4 the app renders no frames at all.
+            return max(2, min(n, 3))
+        }
+        return 3
+    }()
 
     private let device: MTLDevice
     private let queue: MTL4CommandQueue

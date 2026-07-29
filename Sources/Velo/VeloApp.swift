@@ -61,6 +61,16 @@ final class AppModel {
     /// Slower while drawing 40 percent MORE pixels, which is as clear as a
     /// result gets. Left as a toggle because a different panel may behave
     /// differently, but nothing should opt into it without measuring first.
+    /// `false` uses a macOS fullscreen Space, `true` a borderless window at
+    /// the screen frame. Measured on an M4 Pro, 8.1 megapixels:
+    ///
+    ///     borderless window:   119.5 fps
+    ///     fullscreen Space:     80.0 fps
+    ///
+    /// The Space is the correct thing to want and should be the faster one,
+    /// since it can be scanned out directly. It is not, and I could not find
+    /// what makes it ineligible.
+    var borderlessFullScreen = ProcessInfo.processInfo.environment["VELO_SPACE"] == nil
     var nativeInFullScreen = ProcessInfo.processInfo.environment["VELO_NATIVE"] != nil
     /// 0 means uncapped (present every vsync).
     var frameCap: Double = {

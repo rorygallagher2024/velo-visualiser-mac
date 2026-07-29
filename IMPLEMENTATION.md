@@ -244,6 +244,43 @@ amber below 100. It read 0.00 for most of this project because nothing fed it,
 which is precisely why a panel sitting at 40 Hz was invisible: an app rendering
 happily into a throttled panel looks identical to an app that is slow.
 
+## Fullscreen: two kinds, and why the wrong one is faster
+
+`F` gives a borderless window at the screen frame by default. A macOS fullscreen
+Space is available as a setting. Measured on an M4 Pro at 8.1 megapixels:
+
+```
+borderless window:   119.5 fps, waitDrawable  8.4 ms
+fullscreen Space:     80.0 fps, waitDrawable 12.4 ms
+```
+
+The Space is the correct thing to want. It owns the display and can be scanned
+out directly, and a window that merely covers the screen is still an ordinary
+composited window. It is nevertheless the slower of the two here, and I could
+not find what makes it ineligible for the fast path. Ruled out by measurement:
+the layer colourspace (identical at `displayP3`, the screen's own profile, and
+none), application activation, App Nap via `beginActivity`, the display link's
+`preferredFrameRateRange`, and the plist.
+
+What the Space IS limited by is drawable availability, exactly:
+
+```
+2 drawables:  40.0 fps    waitDrawable 24.9 ms
+3 drawables:  80.0 fps    waitDrawable 12.4 ms
+4 drawables:  no frames at all
+```
+
+That is (N - 1) x 40 fps, which predicts 120 at N = 4. There is no N = 4:
+`CAMetalLayer.maximumDrawableCount` accepts 2 or 3 and nothing else, and a
+semaphore permitting more waits forever for a drawable that cannot exist. The
+display in a Space is holding each presented drawable for three vsync periods,
+and three buffers is not enough to cover that.
+
+**The 40 fps this started from was two drawables, not the Space.** Frames in
+flight had been reduced to 2 for latency, measured in a window, where it is
+free. That is the same mistake as the display mode claim: a change measured in
+one mode and assumed in another.
+
 ## Frame pacing
 
 There are two independent throttles: a free drawable, and a free slot of
