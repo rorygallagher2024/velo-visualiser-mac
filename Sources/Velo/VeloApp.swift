@@ -24,6 +24,8 @@ struct VeloApp: App {
 @Observable
 final class AppModel {
     var menuOpen = false
+    var showingAbout = false
+    var showingPrivacy = false
     /// Diagnostics overlay. Off by default: the canvas is meant to be pure
     /// output, and anything drawn over it lands in whatever captures the window.
     var perfOverlay = ProcessInfo.processInfo.environment["VELO_PERF"] != nil
@@ -45,8 +47,10 @@ final class AppModel {
         reason: "Live audio visualisation")
     var sceneIndex = 0
     /// `VELO_HDR=1` starts in extended range, so the path can be exercised
-    /// without driving the UI.
-    var hdrEnabled = ProcessInfo.processInfo.environment["VELO_HDR"] != nil
+    /// without driving the UI. Saved to UserDefaults so the user's choice persists.
+    var hdrEnabled: Bool {
+        didSet { UserDefaults.standard.set(hdrEnabled, forKey: "velo_hdr") }
+    }
 
     /// 0 means uncapped (present every vsync).
     var frameCap: Double = {
@@ -59,6 +63,9 @@ final class AppModel {
     let audio = AudioEngine()
 
     init() {
+        let envHDR = ProcessInfo.processInfo.environment["VELO_HDR"] != nil
+        self.hdrEnabled = envHDR || UserDefaults.standard.bool(forKey: "velo_hdr")
+
         if ProcessInfo.processInfo.environment["VELO_SELFTEST"] != nil { SelfTest.run() }
         VeloLog.begin()
         audio.start()
