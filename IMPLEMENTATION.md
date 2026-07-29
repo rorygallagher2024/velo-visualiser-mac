@@ -60,21 +60,22 @@ At 1920x1080, 2.1 Mpx. Fragment cost scales with pixels, so multiply by about
 
 | Visual | GPU | Lit | Reacts |
 |--------|-----|-----|--------|
-| Spectrogram | 0.06 ms | 5% | 0.030 |
-| Spectrum Bars | 0.07 ms | 37% | 0.224 |
-| Circular Spectrum | 0.08 ms | 12% | 0.077 |
-| Pocket LED | 0.08 ms | 47% | 0.132 |
-| Laser Array | 0.10 ms | 100% | 0.406 |
-| Tunnel | 0.12 ms | 2% | 0.002 |
-| Waveform | 0.21 ms | 3% | 0.013 |
-| Raw Oscilloscope | 0.24 ms | 0.1% | 0.004 |
-| Spectrum Analyser | 0.32 ms | 23% | 0.217 |
-| Waveform 3D | 0.41 ms | 87% | 0.109 |
-| 3D LED | 0.49 ms | 37% | 0.099 |
-| Phosphor Scope | 0.59 ms | 6% | 0.009 |
-| Spectral Bloom | 0.77 ms | 100% | 0.202 |
-| Aurora Drift | 1.43 ms | 100% | 0.491 |
-| Quicksilver | 1.65 ms | 100% | 0.118 |
+| Spectrogram | 0.08 ms | 5% | 0.030 |
+| Circular Spectrum | 0.09 ms | 12% | 0.077 |
+| Spectrum Bars | 0.09 ms | 37% | 0.224 |
+| Pocket LED | 0.10 ms | 47% | 0.132 |
+| Laser Array | 0.11 ms | 100% | 0.406 |
+| Tunnel | 0.13 ms | 2% | 0.002 |
+| Waveform | 0.23 ms | 3% | 0.013 |
+| Raw Oscilloscope | 0.29 ms | 0.1% | 0.004 |
+| Waveform 3D Void | 0.34 ms | 23% | 0.086 |
+| Spectrum Analyser | 0.49 ms | 23% | 0.217 |
+| 3D LED | 0.54 ms | 37% | 0.099 |
+| Waveform 3D | 0.63 ms | 87% | 0.109 |
+| Phosphor Scope | 0.66 ms | 6% | 0.009 |
+| Spectral Bloom | 0.81 ms | 100% | 0.202 |
+| Aurora Drift | 1.49 ms | 100% | 0.491 |
+| Quicksilver | 1.82 ms | 100% | 0.118 |
 
 Extrapolated to 5K fullscreen the heaviest is around 13 ms, against 8.3 ms at
 120 Hz. A render scale control is the fix when that day comes;
@@ -116,6 +117,17 @@ over-composited front to back. What makes the curtains read as volumes rather
 than as glowing sheets is the slab integral, where optical depth is density
 times path length through the slab, so a curtain crossed at a grazing angle
 really is denser than one met face on.
+
+Waveform 3D ships in two stagings from one class, selected by a `Style`. The
+room version is the Android original; the void version drops the fog colour to
+black and omits the floor and ambience blocks from the generated shader source
+entirely, rather than multiplying them by zero, so it does not pay for what it
+never draws. Measured 0.34 ms against 0.63 ms.
+
+The interesting part is what carries depth once the fog, the grid and the
+ambience are gone. Three things: parallax from the camera sway shearing the
+lanes against each other, haze falling to black with distance, and the floor
+reflection, which implies a floor of black glass without drawing one.
 
 `fwidth()` in non-uniform control flow is undefined, and the horizon is exactly
 where neighbouring pixels disagree about whether they are below it. The floor

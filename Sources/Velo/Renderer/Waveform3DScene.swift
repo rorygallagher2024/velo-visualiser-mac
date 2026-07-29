@@ -16,12 +16,38 @@ import Metal
 ///
 /// It shares `WaveHistory` with the flat Waveform, so the two can never
 /// disagree about what the wave IS, only about how to stage it.
+///
+/// Two stagings of the same corridor, because they want opposite things.
+///
+/// `.room` is the Android original. Distance mixes toward the colour of the air
+/// between, there is a grid floor, each curtain spills light onto it, and a deep
+/// violet ambience fills the vanishing region. Every one of those is a depth
+/// cue, and together they read as a place.
+///
+/// `.void` is the same geometry with the lights off, on pure black. All of that
+/// goes, which means the depth cues have to come from somewhere else: parallax
+/// from the camera sway, haze falling to black rather than to fog, and the
+/// floor reflection standing in for a floor of black glass. Nothing is drawn
+/// that is not the wave or its own reflection.
 final class Waveform3DScene: VeloScene {
 
-    let name = "Waveform 3D"
+    enum Style {
+        /// Violet air, grid floor, contact light, ambience.
+        case room
+        /// Pure black. The curtains and their reflection, and nothing else.
+        case void
+    }
+
+    let name: String
+    private let style: Style
 
     private let history = WaveHistory()
     private var energy = BandEnergy()
+
+    init(style: Style = .room) {
+        self.style = style
+        name = style == .room ? "Waveform 3D" : "Waveform 3D Void"
+    }
 
     var historyBuffer: MTLBuffer? { history.gpuBuffer }
 
@@ -39,6 +65,67 @@ final class Waveform3DScene: VeloScene {
         // write guesses into a timeline.
         var packed = SIMD4<Float>(history.headFraction, history.dynamics, energy.envelope, 0)
         pointer.copyMemory(from: &packed, byteCount: MemoryLayout<SIMD4<Float>>.size)
+    }
+
+
+    /// The grid floor and the light each curtain spills onto it. Omitted
+    /// entirely in `.void` rather than multiplied by zero, so that variant does
+    /// not pay for a floor it never shows.
+    private var floorSection: String {
+        guard style == .room else { return "" }
+        return """
+            if (rd.y < -0.001) {
+                float floorHaze = exp(-gz * haze0) * (1.0 - acc);
+
+                // Screen-space line width. A fixed width in grid units makes
+                // distant lines thinner and thinner in pixels until they fall
+                // below the sample grid and crawl as they scroll; scaling by
+                // the derivative keeps every line the same PIXEL width however
+                // far away. Past Nyquist they fade rather than aliasing into a
+                // bright band at the horizon.
+                float zd = min(fract(zu), 1.0 - fract(zu));
+                float zLine = smoothstep(zw * GRID_PX, 0.0, zd)
+                            * (1.0 - smoothstep(0.18, 0.45, zw));
+                float xd = min(fract(xu), 1.0 - fract(xu));
+                float xLine = smoothstep(xw * GRID_PX, 0.0, xd)
+                            * (1.0 - smoothstep(0.18, 0.45, xw));
+                col += max(zLine, xLine) * 0.25 * floorHaze * float3(0.35, 0.15, 0.75);
+
+                // CONTACT GLOW: each curtain spills light onto the floor around
+                // its base. Without this the curtains and the grid are lit by
+                // separate worlds and the wave hovers over a backdrop instead
+                // of standing in a room. Contact is what puts an object IN a
+                // space.
+                for (int k = 0; k < 3; k++) {
+                    float z0 = laneX[k] / (uvEdge + LOOK_X + sway - laneX[k] * flare);
+                    float fAge = (gz - z0) * SLICES_PER_Z;
+                    if (fAge < 0.0 || fAge > 3800.0) { continue; }
+                    int t = wrapSlice(int(s.head - 1.0 - fAge)) * FIELDS;
+                    float3 hf = float3(h[t], h[t + 1], h[t + 2]);
+                    // The lane's x at THIS depth, so the pool of light tracks
+                    // its sheared curtain instead of sliding out from under it.
+                    float lx = laneX[k] * (1.0 + flare * gz);
+                    float dx = gx - lx;
+                    col += laneCol[k] * exp(-dx * dx * SPILL_TIGHT) * hf[2 - k]
+                         * SPILL_AMT * floorHaze;
+                }
+            }
+        """
+    }
+
+    /// The violet ambience filling the vanishing region.
+    private var ambienceSection: String {
+        guard style == .room else { return "" }
+        return """
+            // Deep violet ambience toward the vanishing region, so the curtains
+            // dissolve into atmosphere rather than into black paper. The breath
+            // is deliberately gentle: this is ATMOSPHERE, not a reading. A hard
+            // flash competes with the curtains, strobes at the beat rate, and
+            // swamps the slow dynamics the whole room is staged around.
+            float glow = exp(-abs(uv.y + LOOK_Y) * 6.0)
+                       * exp(-max(uv.x + LOOK_X, 0.0) * 1.4);
+            col += float3(0.25, 0.08, 0.55) * glow * (GLOW_BASE + GLOW_BEAT * s.env);
+        """
     }
 
     var shaderSource: String {
@@ -77,7 +164,9 @@ final class Waveform3DScene: VeloScene {
 
         // Aerial perspective mixes toward the FOG's colour, not toward black.
         // Distance should read as air, not as the lights being dimmed.
-        constant float3 FOG_COL = float3(0.30, 0.14, 0.62);
+        constant float3 FOG_COL = \(style == .room
+            ? "float3(0.30, 0.14, 0.62)"
+            : "float3(0.0, 0.0, 0.0)");
         constant float AERIAL = 0.80;
         // Depth of field, FAR SIDE ONLY. Softening the near side would read as
         // the scene being out of focus, or worse, as low resolution.
@@ -254,51 +343,9 @@ final class Waveform3DScene: VeloScene {
             float zw = max(fwidth(zu), 1e-5);
             float xw = max(fwidth(xu), 1e-5);
 
-            if (rd.y < -0.001) {
-                float floorHaze = exp(-gz * haze0) * (1.0 - acc);
+        \(floorSection)
 
-                // Screen-space line width. A fixed width in grid units makes
-                // distant lines thinner and thinner in pixels until they fall
-                // below the sample grid and crawl as they scroll; scaling by
-                // the derivative keeps every line the same PIXEL width however
-                // far away. Past Nyquist they fade rather than aliasing into a
-                // bright band at the horizon.
-                float zd = min(fract(zu), 1.0 - fract(zu));
-                float zLine = smoothstep(zw * GRID_PX, 0.0, zd)
-                            * (1.0 - smoothstep(0.18, 0.45, zw));
-                float xd = min(fract(xu), 1.0 - fract(xu));
-                float xLine = smoothstep(xw * GRID_PX, 0.0, xd)
-                            * (1.0 - smoothstep(0.18, 0.45, xw));
-                col += max(zLine, xLine) * 0.25 * floorHaze * float3(0.35, 0.15, 0.75);
-
-                // CONTACT GLOW: each curtain spills light onto the floor around
-                // its base. Without this the curtains and the grid are lit by
-                // separate worlds and the wave hovers over a backdrop instead
-                // of standing in a room. Contact is what puts an object IN a
-                // space.
-                for (int k = 0; k < 3; k++) {
-                    float z0 = laneX[k] / (uvEdge + LOOK_X + sway - laneX[k] * flare);
-                    float fAge = (gz - z0) * SLICES_PER_Z;
-                    if (fAge < 0.0 || fAge > 3800.0) { continue; }
-                    int t = wrapSlice(int(s.head - 1.0 - fAge)) * FIELDS;
-                    float3 hf = float3(h[t], h[t + 1], h[t + 2]);
-                    // The lane's x at THIS depth, so the pool of light tracks
-                    // its sheared curtain instead of sliding out from under it.
-                    float lx = laneX[k] * (1.0 + flare * gz);
-                    float dx = gx - lx;
-                    col += laneCol[k] * exp(-dx * dx * SPILL_TIGHT) * hf[2 - k]
-                         * SPILL_AMT * floorHaze;
-                }
-            }
-
-            // Deep violet ambience toward the vanishing region, so the curtains
-            // dissolve into atmosphere rather than into black paper. The breath
-            // is deliberately gentle: this is ATMOSPHERE, not a reading. A hard
-            // flash competes with the curtains, strobes at the beat rate, and
-            // swamps the slow dynamics the whole room is staged around.
-            float glow = exp(-abs(uv.y + LOOK_Y) * 6.0)
-                       * exp(-max(uv.x + LOOK_X, 0.0) * 1.4);
-            col += float3(0.25, 0.08, 0.55) * glow * (GLOW_BASE + GLOW_BEAT * s.env);
+        \(ambienceSection)
 
             // Ordered dither. The translucent curtains fading into haze
             // quantise into wide angled bars on an 8-bit path. Bayer reads as a

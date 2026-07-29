@@ -42,8 +42,7 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Fifteen Visuals:** Ten instruments and five generative scenes, all ported
-  from the Android app.
+* **Sixteen Visuals:** Eleven instruments and five generative scenes.
 * **Built to be Captured:** No on screen chrome, keyboard only control, and a
   frame rate cap so you are not rendering frames a 60 fps stream will never
   sample.
@@ -78,6 +77,11 @@ layers in the way.
 * **Waveform 3D.** The same three envelopes stood up in space as glowing
   curtains running away toward a vanishing point, newest audio beside the
   camera. The music flows toward you.
+* **Waveform 3D Void.** The same corridor with the lights off. No air, no floor
+  grid, no ambience: just the curtains and their reflection on pure black.
+
+All are ported from the Android app except Waveform 3D Void, which is a Mac
+staging of the same data.
 
 **Generative**, which are driven by the sound rather than measuring it:
 
