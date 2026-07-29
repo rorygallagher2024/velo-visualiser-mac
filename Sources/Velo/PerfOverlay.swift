@@ -52,7 +52,6 @@ struct PerfOverlay: View {
     let scene: String
     let audio: AudioStatus
     let hdr: Bool
-    let framesInFlight: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -82,9 +81,9 @@ struct PerfOverlay: View {
 
             divider()
             row("visual", scene, mono: false)
-            row("buffers", "\(framesInFlight) in flight")
             row("range", hdr ? "HDR" : "SDR")
-            row("refresh", displayRate, warn: snapshot.displayHz > 0 && snapshot.displayHz < 100)
+            row("refresh", displayRate)
+            row("device", MachineInfo.chip)
 
             divider()
             row("input", audio.device, mono: false)
@@ -102,11 +101,12 @@ struct PerfOverlay: View {
     private var label: Font { Velo.label(9.5) }
     private var value: Font { Velo.readout(11) }
 
-    /// Against a 120 Hz panel. Amber once frames are being missed, red once a
-    /// third of them are.
+    /// FPS colour relative to whatever the display is actually running.
+    /// White when keeping up, amber when dropping frames, red below half rate.
     private var fpsColour: Color {
-        if snapshot.fps >= 110 { return .white }
-        if snapshot.fps >= 80 { return Color(red: 1.0, green: 0.75, blue: 0.35) }
+        let target = max(snapshot.displayHz, 60)
+        if snapshot.fps >= target * 0.92 { return .white }
+        if snapshot.fps >= target * 0.5  { return Color(red: 1.0, green: 0.75, blue: 0.35) }
         return Color(red: 1.0, green: 0.45, blue: 0.40)
     }
 
@@ -156,4 +156,18 @@ struct PerfOverlay: View {
             .frame(height: 1)
             .padding(.vertical, 7)
     }
+}
+
+/// Reads the chip name once and holds it for the overlay.
+enum MachineInfo {
+    static let chip: String = {
+        var size = 0
+        sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0)
+        guard size > 0 else { return "Apple Silicon" }
+        var buf = [CChar](repeating: 0, count: size)
+        sysctlbyname("machdep.cpu.brand_string", &buf, &size, nil, 0)
+        let raw = String(cString: buf)
+        // "Apple M4 Pro" is more useful than the full Intel-style string.
+        return raw.hasPrefix("Apple") ? raw : String(raw.prefix(40))
+    }()
 }

@@ -32,8 +32,7 @@ struct ContentView: View {
                     snapshot: model.perf,
                     scene: SceneCatalog.names[model.sceneIndex],
                     audio: model.audioStatus,
-                    hdr: model.hdrEnabled,
-                    framesInFlight: Renderer.maxFramesInFlight
+                    hdr: model.hdrEnabled
                 )
                 .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
