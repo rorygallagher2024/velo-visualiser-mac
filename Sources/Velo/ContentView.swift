@@ -82,14 +82,13 @@ private struct HintBar: View {
 /// without it degrades to something deliberate rather than to a blank gap.
 private struct Wordmark: View {
     var body: some View {
-        if let url = Bundle.main.url(forResource: "app_icon_512", withExtension: "png"),
+        if let url = Bundle.main.url(forResource: "velo_v", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFit()
                 .frame(height: 30)
-                .clipShape(RoundedRectangle(cornerRadius: 6.7))
                 .opacity(0.92)
         } else {
             Text("VELO")

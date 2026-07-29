@@ -1,0 +1,11 @@
+<svg viewBox="138 0 236 210" xmlns="http://www.w3.org/2000/svg" width="236" height="210">
+  <title>Velo V</title>
+  <defs>
+    <linearGradient id="vGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF4D9D"/><stop offset="20%" stop-color="#B14DFF"/><stop offset="40%" stop-color="#4D7DFF"/><stop offset="60%" stop-color="#2BD9D9"/><stop offset="80%" stop-color="#4DFF88"/><stop offset="100%" stop-color="#FFE24D"/></linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7.0"/>
+    </filter>
+  </defs>
+  <path d="M 178.0 40.0 L 256.0 189.8 L 334.0 40.0" fill="none" stroke="url(#vGrad)" stroke-width="32.4" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" opacity="0.9"/>
+  <path d="M 178.0 40.0 L 256.0 189.8 L 334.0 40.0" fill="none" stroke="url(#vGrad)" stroke-width="32.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
