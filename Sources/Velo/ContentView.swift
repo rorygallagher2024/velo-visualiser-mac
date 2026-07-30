@@ -182,6 +182,11 @@ private struct ControlPanel: View {
 
             Divider().overlay(.white.opacity(0.12))
 
+            section("Lighting")
+            HueSettingsView(hue: model.hue)
+
+            Divider().overlay(.white.opacity(0.12))
+
             section("About")
             VStack(alignment: .leading, spacing: 6) {
                 Button("About & Licenses") {

@@ -61,6 +61,7 @@ final class AppModel {
     }()
     var selectedDeviceUID: String?
     let audio = AudioEngine()
+    let hue = HueState()
 
     init() {
         let envHDR = ProcessInfo.processInfo.environment["VELO_HDR"] != nil
