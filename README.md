@@ -42,7 +42,7 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Twenty-Eight Visuals:**
+* **Twenty-Nine Visuals:**
 * **Syphon Output:** Zero-copy GPU sharing into OBS and any Syphon client, no
   window capture needed.
 * **Smart Lighting:** Philips Hue Entertainment streaming, LIFX and Nanoleaf
@@ -121,6 +121,9 @@ layers in the way.
 * **Spectral Canyon.** A 3D wireframe landscape sculpted from recent spectrum
   history, scrolling toward the horizon. Curated colour ramp from deep indigo
   through cyan to magenta, with peak caps that flare on the beat.
+* **Flux.** A volumetric kaleidoscope corridor. The camera drifts through an
+  infinite twisted tunnel whose cross-section is mirrored into morphing N-fold
+  symmetry, with three layers of coloured glow accumulating along every ray.
 
 ## Controls
 

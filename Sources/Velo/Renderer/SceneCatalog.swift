@@ -39,6 +39,7 @@ enum SceneCatalog {
         "Ethereal Ribbons",
         "Abstract Waveform",
         "Spectral Canyon",
+        "Flux",
     ]
 
     static func makeAll() -> [VeloScene] {
@@ -73,6 +74,7 @@ enum SceneCatalog {
             EtherealRibbonsScene(),
             AbstractWaveformScene(),
             SpectralCanyonScene(),
+            FluxScene(),
         ]
     }
 

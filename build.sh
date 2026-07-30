@@ -11,6 +11,12 @@ cd "$(dirname "$0")"
 CONFIG="${1:-release}"
 APP="build/Velo Visualiser.app"
 
+# Ensure git submodules (Ableton Link) are populated.
+if [[ -f .gitmodules ]] && [[ ! -f Vendor/link/include/ableton/Link.hpp ]]; then
+  echo "==> initialising submodules"
+  git submodule update --init --recursive
+fi
+
 echo "==> swift build ($CONFIG)"
 swift build -c "$CONFIG" --arch arm64
 
