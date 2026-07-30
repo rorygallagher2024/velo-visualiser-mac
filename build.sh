@@ -11,10 +11,16 @@ cd "$(dirname "$0")"
 CONFIG="${1:-release}"
 APP="build/Velo Visualiser.app"
 
-# Ensure git submodules (Ableton Link) are populated.
-if [[ -f .gitmodules ]] && [[ ! -f Vendor/link/include/ableton/Link.hpp ]]; then
-  echo "==> initialising submodules"
-  git submodule update --init --recursive
+# Ensure Ableton Link headers are present.
+if [[ ! -f Vendor/link/include/ableton/Link.hpp ]]; then
+  if [[ -d .git ]]; then
+    echo "==> initialising submodules"
+    git submodule update --init --recursive
+  else
+    echo "ERROR: Vendor/link is missing. Clone with --recursive, or run:"
+    echo "  git clone --recursive https://github.com/rorygallagher2024/velo-visualiser-mac.git"
+    exit 1
+  fi
 fi
 
 echo "==> swift build ($CONFIG)"
