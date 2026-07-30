@@ -130,12 +130,16 @@ final class MetalCanvasNSView: NSView {
     /// tone-mapped SDR, so this is for direct viewing.
     var hdrEnabled: Bool = false { didSet { applyColorConfiguration() } }
 
+    var syphonEnabled: Bool = false {
+        didSet { applySyphonState() }
+    }
 
     /// The live audio source. Scenes pull whatever they need from it — bands
     /// for the analyser, raw samples for the scope — so nothing has to be
     /// marshalled across the thread boundary every frame.
     var audio: AudioEngine?
     var onToggleMenu: (() -> Void)?
+    var onToggleLighting: (() -> Void)?
     var onToggleHDR: (() -> Void)?
     var onTogglePerf: (() -> Void)?
 
@@ -189,6 +193,7 @@ final class MetalCanvasNSView: NSView {
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "f": toggleFullScreen()
         case "m": onToggleMenu?()
+        case "l": onToggleLighting?()
         case "h": onToggleHDR?()
         case "p": onTogglePerf?()
         default:
@@ -286,6 +291,16 @@ final class MetalCanvasNSView: NSView {
     /// there is no room above white and the toggle genuinely cannot do
     /// anything. That is a display state, not a bug, and it is invisible unless
     /// asked about.
+    private func applySyphonState() {
+        // Syphon reads the drawable texture, which requires framebufferOnly = false.
+        metalLayer.framebufferOnly = !syphonEnabled
+        if syphonEnabled {
+            renderer?.syphon?.start()
+        } else {
+            renderer?.syphon?.stop()
+        }
+    }
+
     private func reportHeadroom() {
         guard let screen = window?.screen ?? NSScreen.main else { return }
         let now = screen.maximumExtendedDynamicRangeColorComponentValue
@@ -459,8 +474,10 @@ final class MetalCanvasNSView: NSView {
 /// SwiftUI wrapper so the canvas can sit inside the app's normal window chrome.
 struct MetalCanvasView: NSViewRepresentable {
     var hdrEnabled: Bool
+    var syphonEnabled: Bool
     var audio: AudioEngine
     var onToggleMenu: () -> Void
+    var onToggleLighting: () -> Void
     var onToggleHDR: () -> Void
     var onTogglePerf: () -> Void
     /// Handed the live stats once the view exists, so the overlay can poll them
@@ -474,7 +491,9 @@ struct MetalCanvasView: NSViewRepresentable {
         let view = MetalCanvasNSView(frame: .zero)
         view.audio = audio
         view.hdrEnabled = hdrEnabled
+        view.syphonEnabled = syphonEnabled
         view.onToggleMenu = onToggleMenu
+        view.onToggleLighting = onToggleLighting
         view.onToggleHDR = onToggleHDR
         view.onTogglePerf = onTogglePerf
         if let stats = view.stats { onStats(stats) }
@@ -486,8 +505,10 @@ struct MetalCanvasView: NSViewRepresentable {
 
     func updateNSView(_ nsView: MetalCanvasNSView, context: Context) {
         nsView.hdrEnabled = hdrEnabled
+        nsView.syphonEnabled = syphonEnabled
         nsView.audio = audio
         nsView.onToggleMenu = onToggleMenu
+        nsView.onToggleLighting = onToggleLighting
         nsView.onToggleHDR = onToggleHDR
         nsView.onTogglePerf = onTogglePerf
         nsView.frameCap = frameCap

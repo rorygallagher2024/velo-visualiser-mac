@@ -55,6 +55,7 @@ final class Renderer: @unchecked Sendable {
     }()
 
     let beatBus: BeatBus
+    private(set) var syphon: SyphonOutput?
 
     private let device: MTLDevice
     private let queue: MTL4CommandQueue
@@ -131,6 +132,7 @@ final class Renderer: @unchecked Sendable {
             bandBuffers.append(b)
         }
 
+        syphon = SyphonOutput(device: device)
         scenes.forEach { $0.prepare(device: device) }
 
         // Everything the shaders will ever read, made resident once. Scenes
@@ -399,6 +401,7 @@ final class Renderer: @unchecked Sendable {
 
         queue.waitForDrawable(drawable)
         queue.commit([commandBuffer], options: options)
+        syphon?.publish(texture: drawable.texture)
         queue.signalDrawable(drawable)
         drawable.present()
 

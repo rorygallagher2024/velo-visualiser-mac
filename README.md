@@ -42,7 +42,15 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Twenty-Seven Visuals:**
+* **Twenty-Eight Visuals:**
+* **Syphon Output:** Zero-copy GPU sharing into OBS and any Syphon client, no
+  window capture needed.
+* **Smart Lighting:** Philips Hue Entertainment streaming, LIFX and Nanoleaf
+  sync, with reactivity presets and per-parameter tuning.
+* **Beat Sensitivity:** Low, Standard or High — controls how readily the beat
+  detector fires, scaling the threshold and the audio-presence gate.
+* **Ableton Link & 4/4 Music Mode:** Wireless tempo sync or automatic
+  beat-grid locking for steady electronic music.
 * **Diagnostics Overlay:** Frame timing, GPU time, the live visual and the
   audio input, on a key. Off by default, since it draws over the canvas.
 * **No Nonsense:** 100% local processing. No data collection. No ads. No cloud
@@ -52,6 +60,9 @@ layers in the way.
 
 **Instruments**, which are honest readouts of the signal:
 
+* **Level Meter.** A broadcast-style PPM with peak hold, calibrated
+  ballistics and a dBFS scale.
+* **Mechanical Meter.** A needle meter with realistic inertia and overshoot.
 * **Spectrum Analyser.** Thirty one third octave bands with peak programme
   ballistics and gravity peak caps.
 * **Raw Oscilloscope.** A single hairline straight from the audio at flat linear
@@ -107,6 +118,9 @@ layers in the way.
 * **Particle Dust.** A gentle cloud of drifting particles.
 * **Ethereal Ribbons.** Flowing ribbons of light, audio-reactive.
 * **Abstract Waveform.** A stylised waveform rendering.
+* **Spectral Canyon.** A 3D wireframe landscape sculpted from recent spectrum
+  history, scrolling toward the horizon. Curated colour ramp from deep indigo
+  through cyan to magenta, with peak caps that flare on the beat.
 
 ## Controls
 
@@ -115,6 +129,7 @@ The canvas carries no on screen controls, so everything is a key.
 | Key | |
 |-----|-----|
 | `M` | show or hide the controls |
+| `L` | show or hide the lighting panel |
 | `F` | fullscreen |
 | `H` | HDR on or off |
 | `P` | diagnostics overlay |

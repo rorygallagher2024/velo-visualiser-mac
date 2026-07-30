@@ -38,14 +38,14 @@ final class HueStreamClient: @unchecked Sendable {
     func connect(completion: @escaping @Sendable (Error?) -> Void) {
         let tlsOptions = NWProtocolTLS.Options()
 
+        // sig: (options, psk_key, psk_identity)
         sec_protocol_options_add_pre_shared_key(
             tlsOptions.securityProtocolOptions,
-            identity.withUnsafeBytes { DispatchData(bytes: $0) as __DispatchData },
-            psk.withUnsafeBytes { DispatchData(bytes: $0) as __DispatchData }
+            psk.withUnsafeBytes { DispatchData(bytes: $0) as __DispatchData },
+            identity.withUnsafeBytes { DispatchData(bytes: $0) as __DispatchData }
         )
 
         // TLS_PSK_WITH_AES_128_GCM_SHA256 = 0x00A8 (IANA).
-        // Not in the Swift overlay but constructible from the raw value.
         if let suite = tls_ciphersuite_t(rawValue: 0x00A8) {
             sec_protocol_options_append_tls_ciphersuite(
                 tlsOptions.securityProtocolOptions, suite)
@@ -60,16 +60,25 @@ final class HueStreamClient: @unchecked Sendable {
         let endpoint = NWEndpoint.hostPort(host: .init(bridgeIp), port: port)
         let conn = NWConnection(to: endpoint, using: params)
 
+        let once = Once()
+        let finish: @Sendable (Error?) -> Void = { error in
+            guard once.claim() else { return }
+            completion(error)
+        }
+
         conn.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
                 VeloLog.write("hue", "DTLS stream connected to \(self?.bridgeIp ?? "?"):2100")
-                completion(nil)
+                finish(nil)
             case .failed(let error):
                 VeloLog.write("hue", "DTLS connection failed: \(error)")
-                completion(error)
+                finish(error)
             case .waiting(let error):
                 VeloLog.write("hue", "DTLS waiting: \(error)")
+            case .cancelled:
+                VeloLog.write("hue", "DTLS connection cancelled")
+                finish(HueStreamError.connectionFailed("Connection cancelled"))
             default:
                 break
             }
@@ -77,6 +86,10 @@ final class HueStreamClient: @unchecked Sendable {
 
         self.connection = conn
         conn.start(queue: queue)
+
+        queue.asyncAfter(deadline: .now() + 8) {
+            finish(HueStreamError.connectionFailed("DTLS handshake timed out"))
+        }
     }
 
     /// Send one frame. `channelIds` and `rgb` are parallel; rgb is interleaved
@@ -146,7 +159,27 @@ final class HueStreamClient: @unchecked Sendable {
     }
 }
 
-enum HueStreamError: Error {
+enum HueStreamError: Error, LocalizedError {
     case invalidPort
     case connectionFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidPort: "Invalid port."
+        case .connectionFailed(let msg): msg
+        }
+    }
+}
+
+/// Thread-safe single-fire gate.
+private final class Once: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !fired else { return false }
+        fired = true
+        return true
+    }
 }

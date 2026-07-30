@@ -52,13 +52,15 @@ final class BeatDetector {
             norm = 0
         }
 
-        let isBeat = norm > normThreshold
+        let isBeat = norm > normThreshold * thresholdScale
             && dynamic > minDynamic
             && (time - lastBeatTime) > minGapSeconds
 
         if isBeat { lastBeatTime = time }
         return isBeat
     }
+
+    var thresholdScale: Float = 1.0
 
     private let noiseUp: Float = 0.010
     private let noiseDown: Float = 0.080

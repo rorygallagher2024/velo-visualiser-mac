@@ -40,6 +40,16 @@ struct AboutView: View {
                         .font(Velo.light(12))
                         .foregroundStyle(.white.opacity(0.6))
                         .fixedSize(horizontal: false, vertical: true)
+
+                    Text("**Ableton Link**\nCopyright © Ableton AG, Berlin. Used under commercial licence.")
+                        .font(Velo.light(12))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("**Syphon**\nCopyright © 2010\u{2013}2023 bangnoise (Tom Butterworth) & vade (Anton Marini). BSD 2-Clause License.")
+                        .font(Velo.light(12))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -95,7 +105,7 @@ struct PrivacyView: View {
                         .font(Velo.display(16))
                         .foregroundStyle(.white)
                         
-                    Text("Velo Visualiser does not collect, share, or sell any personal data. It is a utility tool designed to operate entirely on-device with zero network requests.")
+                    Text("Velo Visualiser does not collect, share, or sell any personal data. When Ableton Link sync is enabled, the app uses local-network UDP multicast to discover and synchronise with other Link-enabled apps on the same Wi-Fi network. No data leaves the local network, and no information is sent to any external server.")
                         .font(Velo.light(14))
                         .foregroundStyle(.white.opacity(0.8))
 

@@ -487,6 +487,17 @@ final class AudioEngine: @unchecked Sendable {
         return (n, w)
     }
 
+    /// Write mono samples into the ring from an external source (tone
+    /// generator). The mic callback must be stopped first so there is
+    /// only one producer.
+    func injectSamples(_ samples: UnsafePointer<Float>, count: Int) {
+        let w = writeIndex.load()
+        for i in 0..<count {
+            ring[(w &+ i) % ringCapacity] = samples[i]
+        }
+        writeIndex.store(w &+ count)
+    }
+
     /// Fill the ring with broadband synthetic signal, for `SelfTest`.
     ///
     /// A sum of tones across the spectrum rather than one sine, so every band

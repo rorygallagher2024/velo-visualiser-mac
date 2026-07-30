@@ -15,12 +15,15 @@ final class HueSetupManager: @unchecked Sendable {
 
     // MARK: - Discovery
 
+    /// Retained while a scan is in progress so ARC doesn't collect it.
+    private var activeBrowser: BonjourBrowser?
+
     func discoverBridges() async -> [HueBridge] {
         var found = [String: HueBridge]()
 
-        // N-UPnP cloud fallback
-        if let url = URL(string: "https://discovery.meethue.com") {
-            do {
+        // N-UPnP: Philips cloud endpoint (works if bridge has internet)
+        do {
+            if let url = URL(string: "https://discovery.meethue.com") {
                 let (data, _) = try await URLSession.shared.data(from: url)
                 if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
                     for obj in arr {
@@ -30,16 +33,23 @@ final class HueSetupManager: @unchecked Sendable {
                         }
                     }
                 }
-            } catch {
-                VeloLog.write("hue", "N-UPnP discovery failed: \(error.localizedDescription)")
+                VeloLog.write("hue", "N-UPnP found \(found.count) bridge(s)")
             }
+        } catch {
+            VeloLog.write("hue", "N-UPnP discovery failed: \(error.localizedDescription)")
         }
 
-        // mDNS via NetService (synchronous scan for a few seconds)
-        let mdns = await withCheckedContinuation { (cont: CheckedContinuation<[HueBridge], Never>) in
-            let browser = BonjourBrowser()
-            browser.search(timeout: 4) { bridges in
-                cont.resume(returning: bridges)
+        // mDNS: NetServiceBrowser must run on a thread with an active RunLoop.
+        // Schedule it on main, which always has one.
+        let mdns: [HueBridge] = await withCheckedContinuation { cont in
+            DispatchQueue.main.async { [weak self] in
+                let browser = BonjourBrowser()
+                self?.activeBrowser = browser
+                browser.search(timeout: 4) { [weak self] bridges in
+                    VeloLog.write("hue", "mDNS found \(bridges.count) bridge(s)")
+                    self?.activeBrowser = nil
+                    cont.resume(returning: bridges)
+                }
             }
         }
         for b in mdns { found[b.ip] = b }
@@ -143,8 +153,22 @@ final class HueSetupManager: @unchecked Sendable {
         }
     }
 
-    func controlLights(_ creds: HueCredentials, lightIds: [String], on: Bool) async {
-        let body: [String: Any] = ["on": ["on": on]]
+    /// Set light state for all lights in `lightIds` via CLIP v2 REST.
+    /// Pass only the properties you want to change; omitted ones stay as-is.
+    func controlLights(
+        _ creds: HueCredentials,
+        lightIds: [String],
+        on: Bool? = nil,
+        brightness: Int? = nil,
+        mirek: Int? = nil,
+        x: Double? = nil,
+        y: Double? = nil
+    ) async {
+        var body: [String: Any] = [:]
+        if let on { body["on"] = ["on": on] }
+        if let brightness { body["dimming"] = ["brightness": brightness] }
+        if let mirek { body["color_temperature"] = ["mirek": mirek] }
+        if let x, let y { body["color"] = ["xy": ["x": x, "y": y]] }
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { return }
 
         for id in lightIds {
@@ -155,6 +179,21 @@ final class HueSetupManager: @unchecked Sendable {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = bodyData
             _ = try? await session.data(for: req)
+        }
+    }
+
+    /// Quick reachability check. Returns RTT in ms, or nil if unreachable.
+    func pingBridge(_ creds: HueCredentials) async -> Int? {
+        guard let url = URL(string: "https://\(creds.bridgeIp)/clip/v2/resource/bridge") else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 3)
+        req.setValue(creds.username, forHTTPHeaderField: "hue-application-key")
+        let t0 = DispatchTime.now().uptimeNanoseconds
+        do {
+            let (_, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            return Int((DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000)
+        } catch {
+            return nil
         }
     }
 }

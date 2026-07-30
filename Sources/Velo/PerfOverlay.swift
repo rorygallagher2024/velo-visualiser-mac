@@ -52,6 +52,8 @@ struct PerfOverlay: View {
     let scene: String
     let audio: AudioStatus
     let hdr: Bool
+    var syphon: Bool = false
+    var toneActive: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -84,11 +86,24 @@ struct PerfOverlay: View {
             row("range", hdr ? "HDR" : "SDR")
             row("refresh", displayRate)
             row("device", MachineInfo.chip)
+            if syphon { row("syphon", "active") }
 
             divider()
-            row("input", audio.device, mono: false)
-            row("format", audio.format)
+            row("input", toneActive ? "test tone" : audio.device, mono: false)
+            if !toneActive { row("format", audio.format) }
             row("level", audio.silent ? "silent" : meter)
+            if LinkSync.enabled {
+                let peers = LinkSync.statusPeers
+                let bpm = LinkSync.statusBpm
+                row("link", peers > 0
+                    ? String(format: "%d peer%@ · %.0f bpm", peers, peers == 1 ? "" : "s", bpm)
+                    : "searching")
+            } else if FourFourSync.enabled {
+                let bpm = FourFourSync.statusBpm
+                row("4/4", bpm > 0
+                    ? String(format: "LOCKED · %.0f bpm", bpm)
+                    : "searching")
+            }
         }
         .padding(14)
         .frame(width: 296, alignment: .leading)

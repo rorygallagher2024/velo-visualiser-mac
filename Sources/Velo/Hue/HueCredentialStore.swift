@@ -1,75 +1,52 @@
 import Foundation
-import Security
 
-/// Keychain-backed persistence for Hue pairing secrets and the selected area.
-final class HueCredentialStore: Sendable {
+/// UserDefaults-backed persistence for Hue pairing credentials and the
+/// selected area. These are LAN-only bridge credentials (username + clientkey)
+/// — same approach as Android's SharedPreferences.
+final class HueCredentialStore: @unchecked Sendable {
 
-    private let service = "com.velo.hue"
+    private let defaults = UserDefaults.standard
+    private let prefix = "hue_"
 
     func save(_ creds: HueCredentials) {
-        set("bridge_ip", creds.bridgeIp)
-        set("username", creds.username)
-        set("clientkey", creds.clientKey)
+        defaults.set(creds.bridgeIp, forKey: key("bridge_ip"))
+        defaults.set(creds.username, forKey: key("username"))
+        defaults.set(creds.clientKey, forKey: key("clientkey"))
     }
 
     func load() -> HueCredentials? {
-        guard let ip = get("bridge_ip"),
-              let user = get("username"),
-              let key = get("clientkey") else { return nil }
-        return HueCredentials(bridgeIp: ip, username: user, clientKey: key)
+        guard let ip = defaults.string(forKey: key("bridge_ip")),
+              let user = defaults.string(forKey: key("username")),
+              let ck = defaults.string(forKey: key("clientkey")) else { return nil }
+        return HueCredentials(bridgeIp: ip, username: user, clientKey: ck)
     }
 
     var selectedAreaId: String? {
-        get { get("area_id") }
-        set {
-            if let v = newValue { set("area_id", v) } else { delete("area_id") }
-        }
+        get { defaults.string(forKey: key("area_id")) }
+        set { defaults.set(newValue, forKey: key("area_id")) }
     }
 
     var syncEnabled: Bool {
-        get { get("sync_enabled") == "1" }
-        set { set("sync_enabled", newValue ? "1" : "0") }
+        get { defaults.bool(forKey: key("sync_enabled")) }
+        set { defaults.set(newValue, forKey: key("sync_enabled")) }
     }
 
     func clear() {
-        for key in ["bridge_ip", "username", "clientkey", "area_id", "sync_enabled"] {
-            delete(key)
+        for k in ["bridge_ip", "username", "clientkey", "area_id", "sync_enabled"] {
+            defaults.removeObject(forKey: key(k))
         }
     }
 
-    private func set(_ key: String, _ value: String) {
-        let data = Data(value.utf8)
+    /// Clean up any old Keychain entries from the previous implementation.
+    static func migrateFromKeychain() {
+        let service = "com.velo.hue"
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-        ]
-        SecItemDelete(query as CFDictionary)
-        var add = query
-        add[kSecValueData as String] = data
-        SecItemAdd(add as CFDictionary, nil)
-    }
-
-    private func get(_ key: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    private func delete(_ key: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
+            kSecMatchLimit as String: kSecMatchLimitAll,
         ]
         SecItemDelete(query as CFDictionary)
     }
+
+    private func key(_ k: String) -> String { prefix + k }
 }
