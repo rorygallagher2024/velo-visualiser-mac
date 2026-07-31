@@ -163,6 +163,8 @@ final class MetalCanvasNSView: NSView {
     var onToggleSyphon: (() -> Void)?
     var onToggleBeats: (() -> Void)?
     var onCycleTheme: (() -> Void)?
+    var onCycleDensity: (() -> Void)?
+    var onToggleVisualPicker: (() -> Void)?
 
     /// Target frame rate; 0 is uncapped. Streams are usually 60, and there is
     /// no point rendering frames OBS will never sample.
@@ -203,6 +205,7 @@ final class MetalCanvasNSView: NSView {
         didSet { if sceneIndex != oldValue { renderer?.selectScene(sceneIndex) } }
     }
     var onSceneChange: ((Int) -> Void)?
+    var favourites: [Int] = []
 
     // Keys are handled here rather than as SwiftUI `.keyboardShortcut`s. Menu
     // key equivalents are matched before the responder chain ever runs, so a
@@ -220,9 +223,11 @@ final class MetalCanvasNSView: NSView {
         case "s": onToggleSyphon?()
         case "b": onToggleBeats?()
         case "t": onCycleTheme?()
+        case "d": onCycleDensity?()
+        case "v": onToggleVisualPicker?()
         default:
             if let n = numberKey(in: event) {
-                changeScene(to: n - 1)
+                changeScene(to: n)
                 return
             }
             // Arrows step through the catalogue, as the swipe does on Android.
@@ -234,16 +239,20 @@ final class MetalCanvasNSView: NSView {
         }
     }
 
-    /// A digit that names a visual. Derived from the catalogue rather than
-    /// listed, so adding a scene doesn't mean remembering to add a key.
-    /// `0` is the tenth, by the usual convention, since a single keypress
-    /// cannot reach past nine.
+    /// A digit that selects a visual. When favourites exist, 1–9/0 map to the
+    /// first ten favourites. Otherwise they index the catalogue directly.
     private func numberKey(in event: NSEvent) -> Int? {
         guard let text = event.charactersIgnoringModifiers, let digit = Int(text)
         else { return nil }
-        let n = digit == 0 ? 10 : digit
-        guard (1...SceneCatalog.names.count).contains(n) else { return nil }
-        return n
+        let slot = digit == 0 ? 9 : digit - 1
+
+        if !favourites.isEmpty {
+            guard slot < favourites.count else { return nil }
+            return favourites[slot]
+        }
+
+        guard slot < SceneCatalog.names.count else { return nil }
+        return slot
     }
 
     private func changeScene(to index: Int) {
@@ -508,12 +517,15 @@ struct MetalCanvasView: NSViewRepresentable {
     var onToggleSyphon: () -> Void
     var onToggleBeats: () -> Void
     var onCycleTheme: () -> Void
+    var onCycleDensity: () -> Void
+    var onToggleVisualPicker: () -> Void
     /// Handed the live stats once the view exists, so the overlay can poll them
     /// without the SwiftUI layer reaching into the renderer itself.
     var onStats: (FrameStats) -> Void
     var frameCap: Double
     var sceneIndex: Int
     var onSceneChange: (Int) -> Void
+    var favourites: [Int]
 
     func makeNSView(context: Context) -> MetalCanvasNSView {
         let view = MetalCanvasNSView(frame: .zero)
@@ -527,10 +539,13 @@ struct MetalCanvasView: NSViewRepresentable {
         view.onToggleSyphon = onToggleSyphon
         view.onToggleBeats = onToggleBeats
         view.onCycleTheme = onCycleTheme
+        view.onCycleDensity = onCycleDensity
+        view.onToggleVisualPicker = onToggleVisualPicker
         if let stats = view.stats { onStats(stats) }
         view.frameCap = frameCap
         view.sceneIndex = sceneIndex
         view.onSceneChange = onSceneChange
+        view.favourites = favourites
         return view
     }
 
@@ -545,8 +560,11 @@ struct MetalCanvasView: NSViewRepresentable {
         nsView.onToggleSyphon = onToggleSyphon
         nsView.onToggleBeats = onToggleBeats
         nsView.onCycleTheme = onCycleTheme
+        nsView.onCycleDensity = onCycleDensity
+        nsView.onToggleVisualPicker = onToggleVisualPicker
         nsView.frameCap = frameCap
         nsView.sceneIndex = sceneIndex
         nsView.onSceneChange = onSceneChange
+        nsView.favourites = favourites
     }
 }

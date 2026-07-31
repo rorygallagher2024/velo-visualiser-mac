@@ -42,10 +42,12 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Thirty Visuals:**
+* **34 Visuals:**
 * **Syphon Output:** Zero-copy GPU sharing into OBS and any Syphon client at a
   fixed 3840×2160, no window capture needed. When Syphon is active the window
   shows a compact control panel instead of the canvas.
+* **Favourites:** Mark visuals as favourites in the picker and the first ten
+  are keyed to 1–9 and 0 for instant recall during a set.
 * **Colour Themes:** Five colour grades — Default, Neon, Warm, Cool and Mono —
   applied to every visual. Cycle with the T key or pick from the controls.
 * **Beat Flash Toggle:** Suppress beat-triggered white flashes for chroma-key
@@ -112,14 +114,19 @@ layers in the way.
   colour shifts, and a twinkling starfield.
 * **Phyllotaxis Bloom.** A sunflower spiral where each dot owns one FFT bin,
   centre to rim mapping lows to highs. The bloom breathes with the spectrum.
+* **Corner Bloom.** Four spirals radiating from the screen corners, leaving the
+  centre clear for camera or content overlays.
 * **Beat Fireworks.** Bass transients launch radial bursts of sparks that arc
   under gravity and fade, over a twinkling star field.
 * **Chromatic Dots.** Fifteen thousand particles in five colours, one per musical
   element: bass, mid, treble, loudness, beat. Each class appears and disappears
   with its own energy.
+* **Chromatic Frame.** The same five particle classes confined to the screen edges,
+  leaving the centre clear for DJ camera overlays.
 * **Crystal Swarm.** A 32,000-particle lattice that breathes and rotates. Bass
   drives waves through the grid, beats bloom the points into bright flashes,
-  and the colour palette shifts spatially across the cloud.
+  and the colour palette shifts spatially across the cloud. Density is
+  adjustable with the D key or the settings panel.
 * **Particle Dust.** A gentle cloud of drifting particles.
 * **Ethereal Ribbons.** Flowing ribbons of light, audio-reactive.
 * **Abstract Waveform.** A stylised waveform rendering.
@@ -139,15 +146,17 @@ The canvas carries no on screen controls, so everything is a key.
 
 | Key | |
 |-----|-----|
-| `M` | show or hide the controls |
+| `V` | visual picker |
+| `M` | show or hide the settings panel |
 | `L` | show or hide the lighting panel |
 | `T` | cycle colour theme |
+| `D` | cycle Crystal Swarm density |
 | `S` | Syphon output on or off |
 | `B` | beat flash on or off |
 | `F` | fullscreen |
-| `H` | HDR on or off |
+| `H` | HDR on or off (hidden when display has no HDR) |
 | `P` | diagnostics overlay |
-| `1` to `9`, `0` | jump to a visual |
+| `1` to `9`, `0` | jump to a favourite (or catalogue position when no favourites) |
 | `left` `right` | step through the visuals |
 
 ## Why Velo Visualiser is Fast

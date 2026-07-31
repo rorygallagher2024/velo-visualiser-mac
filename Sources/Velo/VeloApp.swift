@@ -25,6 +25,7 @@ struct VeloApp: App {
 final class AppModel {
     var menuOpen = false
     var lightingOpen = false
+    var visualPickerOpen = false
     var showingAbout = false
     var showingPrivacy = false
     /// Diagnostics overlay. Off by default: the canvas is meant to be pure
@@ -54,6 +55,11 @@ final class AppModel {
     /// without driving the UI. Saved to UserDefaults so the user's choice persists.
     var hdrEnabled: Bool {
         didSet { UserDefaults.standard.set(hdrEnabled, forKey: "velo_hdr") }
+    }
+
+    var hdrAvailable: Bool {
+        guard let screen = NSScreen.main else { return false }
+        return screen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1.01
     }
 
     /// Syphon output for OBS / other Syphon clients. Persisted.
@@ -124,6 +130,27 @@ final class AppModel {
         didSet {
             ThemePreset.current = themePreset
             UserDefaults.standard.set(themePreset.rawValue, forKey: "velo_theme")
+        }
+    }
+
+    var crystalSwarmGrid: Int = 32 {
+        didSet {
+            CrystalSwarmScene.gridSize = crystalSwarmGrid
+            UserDefaults.standard.set(crystalSwarmGrid, forKey: "velo_swarm_grid")
+        }
+    }
+
+    static let swarmDensityPresets = [32, 24, 18, 12, 8]
+
+    var favourites: [Int] = [] {
+        didSet { UserDefaults.standard.set(favourites, forKey: "velo_favourites") }
+    }
+
+    func toggleFavourite(_ index: Int) {
+        if let pos = favourites.firstIndex(of: index) {
+            favourites.remove(at: pos)
+        } else {
+            favourites.append(index)
         }
     }
 
@@ -209,6 +236,17 @@ final class AppModel {
            let t = ThemePreset(rawValue: themeKey) {
             self.themePreset = t
             ThemePreset.current = t
+        }
+
+        let grid = UserDefaults.standard.integer(forKey: "velo_swarm_grid")
+        if grid >= 6 && grid <= 32 {
+            self.crystalSwarmGrid = grid
+            CrystalSwarmScene.gridSize = grid
+        }
+
+        let maxScene = SceneCatalog.names.count
+        if let saved = UserDefaults.standard.array(forKey: "velo_favourites") as? [Int] {
+            self.favourites = saved.filter { $0 >= 0 && $0 < maxScene }
         }
 
         HueCredentialStore.migrateFromKeychain()

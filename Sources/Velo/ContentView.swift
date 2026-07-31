@@ -20,13 +20,19 @@ struct ContentView: View {
                 audio: model.audio,
                 onToggleMenu: {
                     model.menuOpen.toggle()
-                    if model.menuOpen { model.lightingOpen = false }
+                    if model.menuOpen {
+                        model.lightingOpen = false
+                        model.visualPickerOpen = false
+                    }
                 },
                 onToggleLighting: {
                     model.lightingOpen.toggle()
-                    if model.lightingOpen { model.menuOpen = false }
+                    if model.lightingOpen {
+                        model.menuOpen = false
+                        model.visualPickerOpen = false
+                    }
                 },
-                onToggleHDR: { model.hdrEnabled.toggle() },
+                onToggleHDR: { if model.hdrAvailable { model.hdrEnabled.toggle() } },
                 onTogglePerf: { model.perfOverlay.toggle() },
                 onToggleSyphon: { model.syphonEnabled.toggle() },
                 onToggleBeats: { model.showBeatsOnVisuals.toggle() },
@@ -35,18 +41,33 @@ struct ContentView: View {
                     let i = all.firstIndex(of: model.themePreset) ?? all.startIndex
                     model.themePreset = all[(all.distance(from: all.startIndex, to: i) + 1) % all.count]
                 },
+                onCycleDensity: {
+                    guard SceneCatalog.names[model.sceneIndex] == "Crystal Swarm" else { return }
+                    let presets = AppModel.swarmDensityPresets
+                    let idx = presets.firstIndex(of: model.crystalSwarmGrid)
+                        .map { ($0 + 1) % presets.count } ?? 0
+                    model.crystalSwarmGrid = presets[idx]
+                },
+                onToggleVisualPicker: {
+                    model.visualPickerOpen.toggle()
+                    if model.visualPickerOpen {
+                        model.menuOpen = false
+                        model.lightingOpen = false
+                    }
+                },
                 onStats: { model.statsBox.stats = $0 },
                 frameCap: model.frameCap,
                 sceneIndex: model.sceneIndex,
-                onSceneChange: { model.sceneIndex = $0 }
+                onSceneChange: { model.sceneIndex = $0 },
+                favourites: model.favourites
             )
             .ignoresSafeArea()
 
-            if model.syphonEnabled {
+            if model.syphonEnabled && !model.visualPickerOpen {
                 SyphonModePanel(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.black)
-            } else {
+            } else if !model.syphonEnabled {
                 if model.perfOverlay {
                     PerfOverlay(
                         snapshot: model.perf,
@@ -70,15 +91,22 @@ struct ContentView: View {
                     LightingPanel(model: model)
                         .padding(20)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
-                } else {
-                    HintBar()
+                } else if !model.visualPickerOpen {
+                    HintBar(hdrAvailable: model.hdrAvailable)
                         .padding(14)
                 }
+            }
+
+            if model.visualPickerOpen {
+                VisualPickerPanel(model: model)
+                    .padding(20)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .background(.black)
         .animation(.easeOut(duration: 0.18), value: model.menuOpen)
         .animation(.easeOut(duration: 0.18), value: model.lightingOpen)
+        .animation(.easeOut(duration: 0.18), value: model.visualPickerOpen)
         .animation(.easeOut(duration: 0.18), value: model.perfOverlay)
         .animation(.easeOut(duration: 0.18), value: model.syphonEnabled)
         .onReceive(tick) { _ in
@@ -95,18 +123,40 @@ struct ContentView: View {
 /// A quiet, transient reminder of the keys. There is no on-screen button to
 /// open the menu on purpose: a visible control would show up in the OBS capture.
 private struct HintBar: View {
+    var hdrAvailable: Bool
     @State private var visible = true
 
+    private static let allShortcuts: [(key: String, action: String)] = [
+        ("V", "visuals"), ("M", "settings"), ("L", "lighting"),
+        ("T", "theme"), ("D", "density"), ("S", "syphon"),
+        ("B", "beats"), ("F", "fullscreen"), ("H", "hdr"), ("P", "stats"),
+    ]
+
+    private var shortcuts: [(key: String, action: String)] {
+        hdrAvailable
+            ? Self.allShortcuts
+            : Self.allShortcuts.filter { $0.key != "H" }
+    }
+
     var body: some View {
-        Text("M controls · L lighting · T theme · S syphon · B beats · F fullscreen · H HDR · P stats · ← → visual")
-            .font(Velo.light(13))
-            .tracking(0.4)
-            .foregroundStyle(.white.opacity(0.35))
-            .opacity(visible ? 1 : 0)
-            .task {
-                try? await Task.sleep(for: .seconds(4))
-                withAnimation(.easeOut(duration: 1.2)) { visible = false }
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(shortcuts.enumerated()), id: \.offset) { _, shortcut in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(shortcut.key)
+                        .font(Velo.spectacle(32))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text(shortcut.action.uppercased())
+                        .font(Velo.label(12))
+                        .tracking(3.0)
+                        .foregroundStyle(.white.opacity(0.25))
+                }
             }
+        }
+        .opacity(visible ? 1 : 0)
+        .task {
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation(.easeOut(duration: 1.2)) { visible = false }
+        }
     }
 }
 
@@ -145,19 +195,7 @@ private struct ControlPanel: View {
             VStack(alignment: .leading, spacing: 18) {
                 Wordmark().padding(.bottom, 18)
 
-                section("Visual")
-                VStack(alignment: .leading, spacing: 6) {
-                    Picker("Visual", selection: $model.sceneIndex) {
-                        ForEach(Array(SceneCatalog.names.enumerated()), id: \.offset) { i, n in
-                            Text(n).tag(i)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 280)
-                    caption("Number keys pick a visual directly; left and right "
-                            + "arrows step through them.")
-                }
-
+                section("Appearance")
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Theme")
                         .font(Velo.label(13))
@@ -172,6 +210,26 @@ private struct ControlPanel: View {
                     }
                     caption("Colour grade applied to every visual. "
                             + "T cycles through them.")
+                }
+
+                if SceneCatalog.names[model.sceneIndex] == "Crystal Swarm" {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text("Density")
+                                .font(Velo.label(12))
+                                .foregroundStyle(.white.opacity(0.5))
+                                .frame(width: 50, alignment: .leading)
+                            Slider(value: swarmGridBinding, in: 0...1)
+                                .frame(maxWidth: .infinity)
+                            let n = model.crystalSwarmGrid
+                            Text("\(n * n * n)")
+                                .font(Velo.readout(12))
+                                .monospacedDigit()
+                                .frame(width: 50, alignment: .trailing)
+                        }
+                        caption("Particle count. Fewer dots for a subtler look "
+                                + "over a DJ feed. D cycles through presets.")
+                    }
                 }
 
                 Divider().overlay(.white.opacity(0.12))
@@ -332,9 +390,14 @@ private struct ControlPanel: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle("HDR", isOn: $model.hdrEnabled)
                         .toggleStyle(.switch)
-                    caption("Brighter highlights, on displays that can show them.")
-                    if let warning = Self.headroomWarning(hdrOn: model.hdrEnabled) {
-                        caption(warning)
+                        .disabled(!model.hdrAvailable)
+                    if model.hdrAvailable {
+                        caption("Brighter highlights, on displays that can show them.")
+                        if let warning = Self.headroomWarning(hdrOn: model.hdrEnabled) {
+                            caption(warning)
+                        }
+                    } else {
+                        caption("This display does not support HDR.")
                     }
                 }
 
@@ -389,7 +452,7 @@ private struct ControlPanel: View {
                     .foregroundStyle(.blue)
                 }
 
-                Text("M close · L lighting · F fullscreen · H HDR · ← → visual")
+                Text("M close · V visuals · L lighting · F fullscreen")
                     .font(Velo.label(12))
                     .foregroundStyle(.white.opacity(0.3))
             }
@@ -413,6 +476,13 @@ private struct ControlPanel: View {
         .sheet(isPresented: $model.showingPrivacy) {
             PrivacyView()
         }
+    }
+
+    private var swarmGridBinding: Binding<Float> {
+        Binding(
+            get: { Float(model.crystalSwarmGrid - 6) / 26.0 },
+            set: { model.crystalSwarmGrid = 6 + Int(($0 * 26).rounded()) }
+        )
     }
 
     private var toneFreqBinding: Binding<Float> {
@@ -495,13 +565,11 @@ private struct SyphonModePanel: View {
                     Divider().overlay(.white.opacity(0.12))
 
                     section("Visual")
-                    Picker("Visual", selection: $model.sceneIndex) {
-                        ForEach(Array(SceneCatalog.names.enumerated()), id: \.offset) { i, n in
-                            Text(n).tag(i)
-                        }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(SceneCatalog.names[model.sceneIndex])
+                            .font(Velo.display(16))
+                        caption("V to browse visuals, or \u{2190} \u{2192} to step.")
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 280)
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Theme")
@@ -563,7 +631,7 @@ private struct SyphonModePanel: View {
 
                     Divider().overlay(.white.opacity(0.12))
 
-                    Text("← → change visual · S syphon · L lighting · F fullscreen")
+                    Text("V visuals · \u{2190} \u{2192} step · S syphon · L lighting")
                         .font(Velo.label(12))
                         .foregroundStyle(.white.opacity(0.3))
                 }
@@ -608,6 +676,183 @@ private struct SyphonModePanel: View {
             .font(Velo.light(13))
             .foregroundStyle(.white.opacity(0.5))
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The visual picker, opened with the V key.
+///
+/// Typography carries the design: scene names set in ClashDisplay Extralight
+/// at size, the spectacle weight that only earns its keep when you give it room.
+/// The list reads like a credits roll — the names ARE the interface, not labels
+/// on top of one. Instruments and generative visuals are separated by a quiet
+/// section whisper that stays out of the way.
+private struct VisualPickerPanel: View {
+    @Bindable var model: AppModel
+
+    private static let split = SceneCatalog.generativeStart
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(SceneCatalog.names[model.sceneIndex])
+                .font(Velo.spectacle(36))
+                .tracking(0.6)
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .padding(.bottom, 6)
+
+            Text("\(model.sceneIndex + 1) / \(SceneCatalog.names.count)")
+                .font(Velo.label(10))
+                .tracking(2.0)
+                .foregroundStyle(.white.opacity(0.35))
+                .padding(.bottom, 24)
+
+            Divider().overlay(.white.opacity(0.06))
+                .padding(.bottom, 20)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if !model.favourites.isEmpty {
+                        sectionWhisper("Favourites")
+                            .padding(.bottom, 10)
+
+                        ForEach(Array(model.favourites.enumerated()), id: \.element) { slot, sceneIdx in
+                            favouriteRow(sceneIdx, slot: slot)
+                        }
+
+                        Divider()
+                            .overlay(.white.opacity(0.06))
+                            .padding(.vertical, 16)
+                    }
+
+                    sectionWhisper("Instruments")
+                        .padding(.bottom, 10)
+
+                    ForEach(0..<Self.split, id: \.self) { i in
+                        visualRow(i)
+                    }
+
+                    Divider()
+                        .overlay(.white.opacity(0.06))
+                        .padding(.vertical, 16)
+
+                    sectionWhisper("Generative")
+                        .padding(.bottom, 10)
+
+                    ForEach(Self.split..<SceneCatalog.names.count, id: \.self) { i in
+                        visualRow(i)
+                    }
+                }
+            }
+
+            Divider().overlay(.white.opacity(0.06))
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+            Text(model.favourites.isEmpty
+                 ? "V close \u{00B7} \u{2190} \u{2192} step"
+                 : "V close \u{00B7} \u{2190} \u{2192} step \u{00B7} 1\u{2013}\(min(model.favourites.count, 10)) favourites")
+                .font(Velo.label(11))
+                .tracking(0.6)
+                .foregroundStyle(.white.opacity(0.25))
+        }
+        .padding(24)
+        .frame(width: 360)
+        .background(.black.opacity(0.88), in: .rect(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func favouriteRow(_ sceneIdx: Int, slot: Int) -> some View {
+        let active = model.sceneIndex == sceneIdx
+        let keyLabel = slot < 10 ? "\(slot < 9 ? slot + 1 : 0)" : nil
+        return Button {
+            model.sceneIndex = sceneIdx
+        } label: {
+            HStack(spacing: 0) {
+                if let keyLabel {
+                    Text(keyLabel)
+                        .font(Velo.label(10))
+                        .tracking(1.0)
+                        .foregroundStyle(.white.opacity(0.3))
+                        .frame(width: 18, alignment: .trailing)
+                        .padding(.trailing, 10)
+                }
+
+                Text(SceneCatalog.names[sceneIdx])
+                    .font(Velo.display(16))
+                    .tracking(0.3)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        model.toggleFavourite(sceneIdx)
+                    }
+                } label: {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+
+                if active {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 4, height: 4)
+                        .padding(.leading, 8)
+                }
+            }
+            .padding(.vertical, 5)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(active ? 1.0 : 0.6))
+        .animation(.easeOut(duration: 0.12), value: active)
+    }
+
+    private func visualRow(_ index: Int) -> some View {
+        let active = model.sceneIndex == index
+        let isFav = model.favourites.contains(index)
+        return Button {
+            model.sceneIndex = index
+        } label: {
+            HStack(spacing: 0) {
+                Text(SceneCatalog.names[index])
+                    .font(Velo.display(16))
+                    .tracking(0.3)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        model.toggleFavourite(index)
+                    }
+                } label: {
+                    Image(systemName: isFav ? "heart.fill" : "heart")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(isFav ? 0.4 : 0.15))
+                }
+                .buttonStyle(.plain)
+
+                if active {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 4, height: 4)
+                        .padding(.leading, 8)
+                }
+            }
+            .padding(.vertical, 5)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(active ? 1.0 : 0.6))
+        .animation(.easeOut(duration: 0.12), value: active)
+    }
+
+    private func sectionWhisper(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(Velo.label(10))
+            .tracking(2.0)
+            .foregroundStyle(.white.opacity(0.3))
     }
 }
 

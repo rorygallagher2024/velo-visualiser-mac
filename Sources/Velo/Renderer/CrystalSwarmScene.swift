@@ -16,10 +16,12 @@ final class CrystalSwarmScene: VeloScene {
 
     let name = "Crystal Swarm"
 
-    private static let gridSize = 32
-    private static let count = gridSize * gridSize * gridSize
+    nonisolated(unsafe) static var gridSize: Int = 32
 
-    let draw = SceneDraw.points(CrystalSwarmScene.count)
+    var draw: SceneDraw {
+        let n = Self.gridSize
+        return SceneDraw.points(n * n * n)
+    }
 
     private var energy = BandEnergy()
     private var smoothedBass: Float = 0
@@ -42,12 +44,13 @@ final class CrystalSwarmScene: VeloScene {
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
-        let p = pointer.bindMemory(to: Float.self, capacity: 5)
+        let p = pointer.bindMemory(to: Float.self, capacity: 6)
         p[0] = smoothedBass
         p[1] = smoothedMid
         p[2] = smoothedHigh
         p[3] = energy.envelope
         p[4] = currentMorph
+        p[5] = Float(Self.gridSize)
     }
 
     var shaderSource: String {
@@ -60,9 +63,8 @@ final class CrystalSwarmScene: VeloScene {
             float high;
             float env;
             float morph;
+            float gridSize;
         };
-
-        constant int GRID = \(Self.gridSize);
 
         struct VSOut {
             float4 position [[position]];
@@ -95,6 +97,7 @@ final class CrystalSwarmScene: VeloScene {
             float aspect = u.resolution.x / max(u.resolution.y, 1.0);
             float dpi = max(u.resolution.y / 1080.0, 1.0);
 
+            int GRID = int(s.gridSize);
             int ix = int(vid) % GRID;
             int iy = (int(vid) / GRID) % GRID;
             int iz = int(vid) / (GRID * GRID);
