@@ -140,7 +140,6 @@ final class AudioWebScene: VeloScene {
                                 constant Web &s [[buffer(1)]],
                                 device const float *buf [[buffer(2)]])
         {
-            float aspect = u.resolution.x / max(u.resolution.y, 1.0);
             int lineCount = int(buf[0]);
             int lineVerts = lineCount * 6;
 
@@ -167,7 +166,7 @@ final class AudioWebScene: VeloScene {
                 float2 uv = quadUV[corner];
                 float2 p = mix(a, b, uv.x * 0.5 + 0.5) + perp * uv.y * halfW;
 
-                out.position = float4(p.x / aspect, p.y, 0.0, 1.0);
+                out.position = float4(p, 0.0, 1.0);
 
                 float3 lineCol = float3(0.2 + s.mid * 0.3,
                                         0.5 + s.mid * 0.5,
@@ -189,7 +188,7 @@ final class AudioWebScene: VeloScene {
                 float ptSize = (6.0 + s.high * 12.0) / u.resolution.y;
                 float2 p = center + uv * ptSize;
 
-                out.position = float4(p.x / aspect, p.y, 0.0, 1.0);
+                out.position = float4(p, 0.0, 1.0);
                 out.color = float3(1.0);
                 out.uv = uv;
                 out.isPoint = 1.0;
