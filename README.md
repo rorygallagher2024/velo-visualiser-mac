@@ -42,9 +42,14 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **Twenty-Nine Visuals:**
-* **Syphon Output:** Zero-copy GPU sharing into OBS and any Syphon client, no
-  window capture needed.
+* **Thirty Visuals:**
+* **Syphon Output:** Zero-copy GPU sharing into OBS and any Syphon client at a
+  fixed 3840×2160, no window capture needed. When Syphon is active the window
+  shows a compact control panel instead of the canvas.
+* **Colour Themes:** Five colour grades — Default, Neon, Warm, Cool and Mono —
+  applied to every visual. Cycle with the T key or pick from the controls.
+* **Beat Flash Toggle:** Suppress beat-triggered white flashes for chroma-key
+  workflows where white goes transparent. Lights and haptics still react.
 * **Smart Lighting:** Philips Hue Entertainment streaming, LIFX and Nanoleaf
   sync, with reactivity presets and per-parameter tuning.
 * **Beat Sensitivity:** Low, Standard or High — controls how readily the beat
@@ -124,6 +129,9 @@ layers in the way.
 * **Flux.** A volumetric kaleidoscope corridor. The camera drifts through an
   infinite twisted tunnel whose cross-section is mirrored into morphing N-fold
   symmetry, with three layers of coloured glow accumulating along every ray.
+* **Audio Web.** A reactive network of drifting points connected by proximity
+  lines. Bass speeds the points, mids brighten the connections, highs flare
+  the dots.
 
 ## Controls
 
@@ -133,6 +141,9 @@ The canvas carries no on screen controls, so everything is a key.
 |-----|-----|
 | `M` | show or hide the controls |
 | `L` | show or hide the lighting panel |
+| `T` | cycle colour theme |
+| `S` | Syphon output on or off |
+| `B` | beat flash on or off |
 | `F` | fullscreen |
 | `H` | HDR on or off |
 | `P` | diagnostics overlay |

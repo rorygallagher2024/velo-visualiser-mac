@@ -30,16 +30,18 @@ final class BeatPulseScene: VeloScene {
         time += dt
 
         let bus = BeatBus.current
-        if bus.beatCount != lastBeatCount {
+        if BeatBus.showBeatsOnVisuals, bus.beatCount != lastBeatCount {
             lastBeatCount = bus.beatCount
             beats[head] = time
             head = (head + 1) % maxRings
+        } else {
+            lastBeatCount = bus.beatCount
         }
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
         let p = pointer.bindMemory(to: Float.self, capacity: 2 + maxRings)
-        p[0] = BeatBus.current.envelope
+        p[0] = BeatBus.current.visualEnvelope
         p[1] = energy.low
         for i in 0..<maxRings { p[2 + i] = beats[i] }
     }
@@ -97,7 +99,7 @@ final class BeatPulseScene: VeloScene {
                 col += float3(1.0, 0.7, 0.4) * ring * fade * fade * 2.6;
             }
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

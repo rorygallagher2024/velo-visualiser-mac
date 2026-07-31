@@ -188,7 +188,7 @@ final class ElectricIrisScene: VeloScene {
             finalColor += float3(0.6, 0.9, 1.0) * spark * strikePower * strikeMask;
 
             finalColor *= 1.0 - 0.4 * smoothstep(0.5, 1.5, rUV);
-            finalColor *= u.dim;
+            finalColor = themeGrade(finalColor, u) * u.dim;
 
             return float4(finalColor, 1.0);
         }

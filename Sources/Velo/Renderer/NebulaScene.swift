@@ -186,7 +186,7 @@ final class NebulaScene: VeloScene {
             // Tone mapping
             col = col / (1.0 + col * 0.2);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

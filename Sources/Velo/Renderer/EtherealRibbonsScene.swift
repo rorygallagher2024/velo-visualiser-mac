@@ -134,7 +134,7 @@ final class EtherealRibbonsScene: VeloScene {
             float vignette = smoothstep(1.0, 0.4, abs(uv.x));
             finalColor *= vignette;
             
-            return float4(finalColor * u.dim, 1.0);
+            return float4(themeGrade(finalColor, u) * u.dim, 1.0);
         }
         """
     }

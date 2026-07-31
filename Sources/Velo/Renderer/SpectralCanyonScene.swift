@@ -81,7 +81,7 @@ final class SpectralCanyonScene: VeloScene {
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
-        let env = BeatBus.current.envelope
+        let env = BeatBus.current.visualEnvelope
         var packed = SIMD4<Float>(Float(head), scrollAccum, energy.envelope, env)
         pointer.copyMemory(from: &packed, byteCount: MemoryLayout<SIMD4<Float>>.size)
     }
@@ -238,7 +238,7 @@ final class SpectralCanyonScene: VeloScene {
             float wireAlpha = wire * fade * (0.5 + mag * 1.5);
             float alpha = max(wireAlpha, fillAlpha);
 
-            return float4(col * alpha * u.dim, alpha);
+            return float4(themeGrade(col, u) * alpha * u.dim, alpha);
         }
         """
     }

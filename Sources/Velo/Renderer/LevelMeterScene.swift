@@ -156,7 +156,7 @@ final class LevelMeterScene: VeloScene {
                                      float2(0.020, 0.0055), 0.0045);
             col += RED * aaFill(0.0, dLamp) * (0.06 + 1.25 * s.clip);
 
-            return float4(col * u.dim * s.glow, 1.0);
+            return float4(themeGrade(col, u) * u.dim * s.glow, 1.0);
         }
         """
     }

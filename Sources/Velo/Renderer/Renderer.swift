@@ -9,6 +9,11 @@ struct Uniforms {
     var resolution: SIMD2<Float> = .zero
     var time: Float = 0
     var dim: Float = 1
+    var hueShift: Float = 0
+    var saturation: Float = 1
+    var tintR: Float = 1
+    var tintG: Float = 1
+    var tintB: Float = 1
 }
 
 /// The Metal 4 renderer.
@@ -66,6 +71,8 @@ final class Renderer: @unchecked Sendable {
     private var pipeline: MTLRenderPipelineState?
     private var library: MTLLibrary?
     private var pixelFormat: MTLPixelFormat = .bgra8Unorm
+    private var blitPipeline: MTLRenderPipelineState?
+    private var lastOffscreenInResidency: MTLTexture?
 
     /// Metal 4 makes residency the app's job. A buffer that is not in a
     /// residency set attached to the queue reads as zeros on the GPU, with no
@@ -93,6 +100,10 @@ final class Renderer: @unchecked Sendable {
     }
     var sceneName: String { scenes[sceneIndex].name }
     var sceneNames: [String] { scenes.map(\.name) }
+
+    /// Syphon output resolution. Defaults to 4K; the window can be any size.
+    var syphonOutputWidth: Int = 3840
+    var syphonOutputHeight: Int = 2160
 
     let stats = FrameStats()
 
@@ -148,6 +159,38 @@ final class Renderer: @unchecked Sendable {
         }
 
         guard buildPipeline(for: .bgra8Unorm) else { return nil }
+        blitPipeline = Self.makeBlitPipeline(device: device, compiler: compiler, format: .bgra8Unorm)
+    }
+
+    /// A minimal render pipeline that samples a texture onto a fullscreen
+    /// triangle. Used to scale the Syphon offscreen into the drawable.
+    private static func makeBlitPipeline(
+        device: MTLDevice, compiler: MTL4Compiler, format: MTLPixelFormat
+    ) -> MTLRenderPipelineState? {
+        let src = """
+        #include <metal_stdlib>
+        using namespace metal;
+        struct V { float4 pos [[position]]; float2 uv; };
+        vertex V blitVert(uint vid [[vertex_id]]) {
+            float2 p = float2((vid << 1) & 2, vid & 2);
+            V o; o.pos = float4(p * 2.0 - 1.0, 0, 1);
+            o.uv = float2(p.x, 1.0 - p.y);
+            return o;
+        }
+        fragment float4 blitFrag(V in [[stage_in]],
+                                 texture2d<float> tex [[texture(0)]]) {
+            constexpr sampler s(filter::linear);
+            return tex.sample(s, in.uv);
+        }
+        """
+        guard let lib = try? device.makeLibrary(source: src, options: nil) else { return nil }
+        let vd = MTL4LibraryFunctionDescriptor(); vd.name = "blitVert"; vd.library = lib
+        let fd = MTL4LibraryFunctionDescriptor(); fd.name = "blitFrag"; fd.library = lib
+        let desc = MTL4RenderPipelineDescriptor()
+        desc.vertexFunctionDescriptor = vd
+        desc.fragmentFunctionDescriptor = fd
+        desc.colorAttachments[0]?.pixelFormat = format
+        return try? compiler.makeRenderPipelineState(descriptor: desc)
     }
 
     /// Switch scenes. Each carries its own shader, so this recompiles: a few
@@ -239,9 +282,11 @@ final class Renderer: @unchecked Sendable {
             attachment.destinationAlphaBlendFactor = .one
         }
 
-        guard let state = try? compiler.makeRenderPipelineState(descriptor: descriptor)
-        else {
-            print("[velo] PIPELINE FAILED (\(scenes[sceneIndex].name))")
+        let state: MTLRenderPipelineState
+        do {
+            state = try compiler.makeRenderPipelineState(descriptor: descriptor)
+        } catch {
+            print("[velo] PIPELINE FAILED (\(scenes[sceneIndex].name)): \(error)")
             fflush(stdout)
             return false
         }
@@ -264,9 +309,12 @@ final class Renderer: @unchecked Sendable {
         BeatBus.current = beatBus
         scene.update(audio: audio, dt: 1.0 / 60.0)
 
+        let theme = ThemePreset.current.grade
         var uniforms = Uniforms(
             resolution: SIMD2(Float(target.width), Float(target.height)),
-            time: time, dim: 1)
+            time: time, dim: 1,
+            hueShift: theme.hueShift, saturation: theme.saturation,
+            tintR: theme.tintR, tintG: theme.tintG, tintB: theme.tintB)
         uniformBuffers[slot].contents()
             .copyMemory(from: &uniforms, byteCount: MemoryLayout<Uniforms>.stride)
         scene.writeData(into: bandBuffers[slot].contents())
@@ -347,10 +395,41 @@ final class Renderer: @unchecked Sendable {
         let scene = scenes[sceneIndex]
         scene.update(audio: audio, dt: dt)
 
+        // When Syphon is active, render to a fixed-size offscreen texture
+        // (default 3840x2160) and blit to the drawable. This eliminates
+        // tearing (the offscreen is not framebufferOnly and not recycled)
+        // and gives Syphon clients a stable 4K feed regardless of window
+        // size. When Syphon is off, render directly to the drawable.
+        let syphonActive = syphon?.isRunning == true
+        let renderTarget: MTLTexture
+        let syphonTexture: MTLTexture?
+
+        if syphonActive,
+           let offscreen = syphon?.ensureOffscreen(
+               width: syphonOutputWidth, height: syphonOutputHeight) {
+            if offscreen !== lastOffscreenInResidency, let set = residencySet {
+                set.addAllocation(offscreen)
+                set.commit()
+                set.requestResidency()
+                lastOffscreenInResidency = offscreen
+            }
+            renderTarget = offscreen
+            syphonTexture = offscreen
+        } else {
+            renderTarget = drawable.texture
+            syphonTexture = nil
+        }
+
+        let theme = ThemePreset.current.grade
         var uniforms = Uniforms(
-            resolution: SIMD2(Float(drawable.texture.width), Float(drawable.texture.height)),
+            resolution: SIMD2(Float(renderTarget.width), Float(renderTarget.height)),
             time: time,
-            dim: 1
+            dim: 1,
+            hueShift: theme.hueShift,
+            saturation: theme.saturation,
+            tintR: theme.tintR,
+            tintG: theme.tintG,
+            tintB: theme.tintB
         )
         uniformBuffers[slot].contents()
             .copyMemory(from: &uniforms, byteCount: MemoryLayout<Uniforms>.stride)
@@ -362,8 +441,9 @@ final class Renderer: @unchecked Sendable {
         allocator.reset()
         commandBuffer.beginCommandBuffer(allocator: allocator)
 
+        // 1) Scene render pass — into offscreen (Syphon) or drawable.
         let pass = MTL4RenderPassDescriptor()
-        pass.colorAttachments[0].texture = drawable.texture
+        pass.colorAttachments[0].texture = renderTarget
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
@@ -377,38 +457,150 @@ final class Renderer: @unchecked Sendable {
             }
             encoder.setArgumentTable(argumentTable, stages: .fragment)
             encoder.setArgumentTable(argumentTable, stages: .vertex)
-            // Shader-generated vertices, no vertex buffer: three for a
-            // fullscreen triangle (no seam down the diagonal a two-triangle
-            // quad would have), or one per particle for a point-sprite scene.
             let draw = scene.draw
             encoder.drawPrimitives(
                 primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
             encoder.endEncoding()
         }
+
+        // 2) If we rendered offscreen, scale-blit into the drawable via a
+        //    fullscreen-triangle render pass. BlitEncoder.copy() can't scale.
+        if syphonTexture != nil, let blitPSO = blitPipeline {
+            let blitPass = MTL4RenderPassDescriptor()
+            blitPass.colorAttachments[0].texture = drawable.texture
+            blitPass.colorAttachments[0].loadAction = .dontCare
+            blitPass.colorAttachments[0].storeAction = .store
+
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: blitPass) {
+                encoder.setRenderPipelineState(blitPSO)
+                argumentTable.setTexture(renderTarget.gpuResourceID, index: 0)
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.drawPrimitives(
+                    primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
+                encoder.endEncoding()
+            }
+        }
+
+        // 3) Signal the Syphon event so the blit queue knows the render
+        //    is done before it reads the offscreen texture.
+        var syphonEventVal: UInt64 = 0
+        if syphonTexture != nil, let sy = syphon {
+            syphonEventVal = sy.nextEventValue
+            (commandBuffer as? MTLCommandBuffer)?
+                .encodeSignalEvent(sy.currentEvent, value: syphonEventVal)
+        }
+
         commandBuffer.endCommandBuffer()
 
         let options = MTL4CommitOptions()
         let semaphore = frameSemaphore
         let stats = stats
         options.addFeedbackHandler { feedback in
-            // TRUE GPU execution, from Metal's own timestamps. Timing the
-            // handler against a CPU clock instead measures scheduling and vsync
-            // waiting as well, which cannot distinguish "the GPU is slow" from
-            // "we are simply being called less often" — the exact question here.
             stats.recordGPU(feedback.gpuEndTime - feedback.gpuStartTime)
             semaphore.signal()
         }
 
         queue.waitForDrawable(drawable)
         queue.commit([commandBuffer], options: options)
-        syphon?.publish(texture: drawable.texture)
+
+        if let syphonTex = syphonTexture {
+            syphon?.publish(texture: syphonTex, afterEvent: syphonEventVal)
+        }
+
         queue.signalDrawable(drawable)
         drawable.present()
 
         stats.recordFrame(
             encode: CACurrentMediaTime() - encodeStart,
-            size: drawable.texture.width * drawable.texture.height
+            size: renderTarget.width * renderTarget.height
         )
+    }
+    /// Headless render for Syphon-only mode: renders to the offscreen texture
+    /// and publishes to Syphon clients. No drawable is acquired or presented,
+    /// so the window can show a control panel instead of the canvas.
+    func renderSyphonOnly(audio: AudioEngine, time: Float) {
+        applyPendingScene()
+        guard buildPipeline(for: .bgra8Unorm), let pipeline else { return }
+        guard let syphon, syphon.isRunning,
+              let offscreen = syphon.ensureOffscreen(
+                  width: syphonOutputWidth, height: syphonOutputHeight)
+        else { return }
+
+        if offscreen !== lastOffscreenInResidency, let set = residencySet {
+            set.addAllocation(offscreen)
+            set.commit()
+            set.requestResidency()
+            lastOffscreenInResidency = offscreen
+        }
+
+        frameSemaphore.wait()
+        let encodeStart = CACurrentMediaTime()
+        let slot = frameIndex % Self.maxFramesInFlight
+        frameIndex &+= 1
+
+        let dt = lastTime < 0 ? 1.0 / 60.0 : min(max(time - lastTime, 0), 0.1)
+        lastTime = time
+        beatBus.update(audio: audio, dt: dt, time: time)
+        BeatBus.current = beatBus
+        let scene = scenes[sceneIndex]
+        scene.update(audio: audio, dt: dt)
+
+        let theme = ThemePreset.current.grade
+        var uniforms = Uniforms(
+            resolution: SIMD2(Float(offscreen.width), Float(offscreen.height)),
+            time: time, dim: 1,
+            hueShift: theme.hueShift, saturation: theme.saturation,
+            tintR: theme.tintR, tintG: theme.tintG, tintB: theme.tintB)
+        uniformBuffers[slot].contents()
+            .copyMemory(from: &uniforms, byteCount: MemoryLayout<Uniforms>.stride)
+        scene.writeData(into: bandBuffers[slot].contents())
+
+        let allocator = allocators[slot]
+        let commandBuffer = commandBuffers[slot]
+        allocator.reset()
+        commandBuffer.beginCommandBuffer(allocator: allocator)
+
+        let pass = MTL4RenderPassDescriptor()
+        pass.colorAttachments[0].texture = offscreen
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+
+        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+            encoder.setRenderPipelineState(pipeline)
+            argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+            argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+            if let history = scene.historyBuffer {
+                argumentTable.setAddress(history.gpuAddress, index: 2)
+            }
+            encoder.setArgumentTable(argumentTable, stages: .fragment)
+            encoder.setArgumentTable(argumentTable, stages: .vertex)
+            let draw = scene.draw
+            encoder.drawPrimitives(
+                primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
+            encoder.endEncoding()
+        }
+
+        let eventVal = syphon.nextEventValue
+        (commandBuffer as? MTLCommandBuffer)?
+            .encodeSignalEvent(syphon.currentEvent, value: eventVal)
+
+        commandBuffer.endCommandBuffer()
+
+        let options = MTL4CommitOptions()
+        let semaphore = frameSemaphore
+        let stats = stats
+        options.addFeedbackHandler { feedback in
+            stats.recordGPU(feedback.gpuEndTime - feedback.gpuStartTime)
+            semaphore.signal()
+        }
+        queue.commit([commandBuffer], options: options)
+
+        syphon.publish(texture: offscreen, afterEvent: eventVal)
+
+        stats.recordFrame(
+            encode: CACurrentMediaTime() - encodeStart,
+            size: offscreen.width * offscreen.height)
     }
 }
 

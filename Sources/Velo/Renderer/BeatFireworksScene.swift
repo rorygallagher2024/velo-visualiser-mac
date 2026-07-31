@@ -59,9 +59,11 @@ final class BeatFireworksScene: VeloScene {
         clock += dt
 
         let bus = BeatBus.current
-        if bus.beatCount != lastBeatCount {
+        if BeatBus.showBeatsOnVisuals, bus.beatCount != lastBeatCount {
             lastBeatCount = bus.beatCount
             spawnBurst(energy: 0.85 + energy.low * 0.4)
+        } else {
+            lastBeatCount = bus.beatCount
         }
 
         integrate(dt: dt)
@@ -205,7 +207,7 @@ final class BeatFireworksScene: VeloScene {
             float glow = exp(-d * 2.5);
             // HDR: a fresh spark pushes well past 1.0 so the highlight blooms.
             float3 col = palette(in.hue) * in.life * glow * (1.0 + in.life * 1.5);
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

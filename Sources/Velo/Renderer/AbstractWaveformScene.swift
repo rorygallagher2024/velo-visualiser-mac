@@ -125,7 +125,7 @@ final class AbstractWaveformScene: VeloScene {
             float fade = exp(-age / (VISIBLE * 0.5)); // smooth exponential decay over time
             finalColor *= (0.5 + 0.5 * fade);
             
-            return float4(finalColor * u.dim, 1.0);
+            return float4(themeGrade(finalColor, u) * u.dim, 1.0);
         }
         """
     }

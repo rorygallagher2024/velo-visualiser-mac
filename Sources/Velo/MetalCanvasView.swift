@@ -24,6 +24,7 @@ private final class RenderLoop: @unchecked Sendable {
     private var thread: Thread?
     private var capHz: Double = 0      // 0 = uncapped (present at vsync)
     private var pendingSize: CGSize?
+    private var _headless = false
 
     /// Drawable size, applied by the render thread.
     ///
@@ -45,6 +46,14 @@ private final class RenderLoop: @unchecked Sendable {
         set { lock.lock(); capHz = newValue; lock.unlock() }
     }
 
+    /// When true, renders to the Syphon offscreen texture only — no drawable
+    /// is acquired and nothing is presented to the layer. The window can show
+    /// a control panel instead.
+    var headless: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _headless }
+        set { lock.lock(); _headless = newValue; lock.unlock() }
+    }
+
     init(renderer: Renderer, layer: CAMetalLayer, audio: AudioEngine) {
         self.renderer = renderer
         self.layer = layer
@@ -64,29 +73,35 @@ private final class RenderLoop: @unchecked Sendable {
 
         let thread = Thread { [self] in
             var nextDue = CACurrentMediaTime()
+            var wasHeadless = false
             while isRunning {
                 autoreleasepool {
-                    let cap = frameCap
+                    let isHeadless = headless
+                    let cap = isHeadless ? max(frameCap, 60) : frameCap
                     if cap > 0 {
                         let interval = 1.0 / cap
                         let now = CACurrentMediaTime()
                         if now < nextDue { Thread.sleep(forTimeInterval: nextDue - now) }
-                        // Re-anchor rather than accumulate, so a late frame does not
-                        // leave the loop trying to catch up forever.
                         nextDue = max(nextDue + interval, CACurrentMediaTime())
                     }
-                    lock.lock()
-                    let resize = pendingSize
-                    pendingSize = nil
-                    lock.unlock()
-                    if let resize, layer.drawableSize != resize {
-                        layer.drawableSize = resize
+                    let t = Float(CACurrentMediaTime() - startTime)
+                    if isHeadless {
+                        renderer.renderSyphonOnly(audio: audio, time: t)
+                    } else {
+                        if wasHeadless {
+                            renderer.buildPipeline(
+                                for: layer.pixelFormat, force: true)
+                        }
+                        lock.lock()
+                        let resize = pendingSize
+                        pendingSize = nil
+                        lock.unlock()
+                        if let resize, layer.drawableSize != resize {
+                            layer.drawableSize = resize
+                        }
+                        renderer.render(layer: layer, audio: audio, time: t)
                     }
-                    renderer.render(
-                        layer: layer,
-                        audio: audio,
-                        time: Float(CACurrentMediaTime() - startTime)
-                    )
+                    wasHeadless = isHeadless
                 }
             }
         }
@@ -131,7 +146,10 @@ final class MetalCanvasNSView: NSView {
     var hdrEnabled: Bool = false { didSet { applyColorConfiguration() } }
 
     var syphonEnabled: Bool = false {
-        didSet { applySyphonState() }
+        didSet {
+            applySyphonState()
+            loop?.headless = syphonEnabled
+        }
     }
 
     /// The live audio source. Scenes pull whatever they need from it — bands
@@ -142,6 +160,9 @@ final class MetalCanvasNSView: NSView {
     var onToggleLighting: (() -> Void)?
     var onToggleHDR: (() -> Void)?
     var onTogglePerf: (() -> Void)?
+    var onToggleSyphon: (() -> Void)?
+    var onToggleBeats: (() -> Void)?
+    var onCycleTheme: (() -> Void)?
 
     /// Target frame rate; 0 is uncapped. Streams are usually 60, and there is
     /// no point rendering frames OBS will never sample.
@@ -196,6 +217,9 @@ final class MetalCanvasNSView: NSView {
         case "l": onToggleLighting?()
         case "h": onToggleHDR?()
         case "p": onTogglePerf?()
+        case "s": onToggleSyphon?()
+        case "b": onToggleBeats?()
+        case "t": onCycleTheme?()
         default:
             if let n = numberKey(in: event) {
                 changeScene(to: n - 1)
@@ -344,6 +368,7 @@ final class MetalCanvasNSView: NSView {
             renderer.selectScene(i)
         }
         loop.frameCap = frameCap
+        loop.headless = syphonEnabled
         loop.start()
         self.loop = loop
 
@@ -480,6 +505,9 @@ struct MetalCanvasView: NSViewRepresentable {
     var onToggleLighting: () -> Void
     var onToggleHDR: () -> Void
     var onTogglePerf: () -> Void
+    var onToggleSyphon: () -> Void
+    var onToggleBeats: () -> Void
+    var onCycleTheme: () -> Void
     /// Handed the live stats once the view exists, so the overlay can poll them
     /// without the SwiftUI layer reaching into the renderer itself.
     var onStats: (FrameStats) -> Void
@@ -496,6 +524,9 @@ struct MetalCanvasView: NSViewRepresentable {
         view.onToggleLighting = onToggleLighting
         view.onToggleHDR = onToggleHDR
         view.onTogglePerf = onTogglePerf
+        view.onToggleSyphon = onToggleSyphon
+        view.onToggleBeats = onToggleBeats
+        view.onCycleTheme = onCycleTheme
         if let stats = view.stats { onStats(stats) }
         view.frameCap = frameCap
         view.sceneIndex = sceneIndex
@@ -511,6 +542,9 @@ struct MetalCanvasView: NSViewRepresentable {
         nsView.onToggleLighting = onToggleLighting
         nsView.onToggleHDR = onToggleHDR
         nsView.onTogglePerf = onTogglePerf
+        nsView.onToggleSyphon = onToggleSyphon
+        nsView.onToggleBeats = onToggleBeats
+        nsView.onCycleTheme = onCycleTheme
         nsView.frameCap = frameCap
         nsView.sceneIndex = sceneIndex
         nsView.onSceneChange = onSceneChange

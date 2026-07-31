@@ -174,13 +174,13 @@ final class CrystalSwarmScene: VeloScene {
 
             float brightness = 1.0 + in.energy * 2.5 + in.beat * 3.0;
             col *= brightness;
-            col *= core * u.dim;
+            col *= core;
             // Depth fades far particles but only gently — the perspective
             // projection already shrinks them, so dimming on top makes the
             // back of the cloud vanish entirely.
             col *= 0.4 + in.depth * 1.5;
 
-            return float4(col, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

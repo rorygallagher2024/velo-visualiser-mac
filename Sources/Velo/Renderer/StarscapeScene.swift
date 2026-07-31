@@ -53,11 +53,12 @@ final class StarscapeScene: VeloScene {
         travel = (travel + warpRate * dt).truncatingRemainder(dividingBy: 1)
 
         let bus = BeatBus.current
-        if bus.beatCount != lastBeatCount {
+        if BeatBus.showBeatsOnVisuals, bus.beatCount != lastBeatCount {
             lastBeatCount = bus.beatCount
             flash = 1
             flashHue = (flashHue + 0.37).truncatingRemainder(dividingBy: 1)
         } else {
+            lastBeatCount = bus.beatCount
             flash = max(flash - dt * flashFall, 0)
         }
     }
@@ -229,7 +230,7 @@ final class StarscapeScene: VeloScene {
             float3 flashCol = palette(s.flashHue + in.sel);
             col += flashStar * s.flash * flashCol * glow * (0.6 + in.bright * 3.0);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

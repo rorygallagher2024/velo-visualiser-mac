@@ -131,7 +131,7 @@ final class SpectrumAnalyserScene: VeloScene {
             col += float3(0.34) * smoothstep(AA, -AA, dPk);
         }
 
-        return float4(col * u.dim, 1.0);
+        return float4(themeGrade(col, u) * u.dim, 1.0);
     }
     """
     }

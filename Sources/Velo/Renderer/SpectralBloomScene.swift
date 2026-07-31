@@ -111,7 +111,7 @@ final class SpectralBloomScene: VeloScene {
             float core = exp(-r * 6.5);
             col += core * (0.22 + s.low * 0.7) * palette(u.time * 0.1 + 0.2);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

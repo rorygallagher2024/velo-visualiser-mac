@@ -150,7 +150,7 @@ final class LedMatrix3DScene: VeloScene {
                 col += pow(1.0 - max(dot(n, -rd), 0.0), 4.0) * matColor * 0.5;
             }
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

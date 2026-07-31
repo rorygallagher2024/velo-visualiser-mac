@@ -89,7 +89,7 @@ final class LaserArrayScene: VeloScene {
             float r0 = length(uv);
             col += float3(0.6, 0.8, 1.0) * exp(-r0 * 7.0) * (0.25 + s.low * 0.5);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

@@ -27,6 +27,11 @@ final class BeatBus: @unchecked Sendable {
     /// detector and the audio-presence gate.
     nonisolated(unsafe) static var sensitivity: BeatSensitivity = .standard
 
+    /// When false, `visualEnvelope` and `visualBarPhase` return 0 so scenes
+    /// don't flash on beats, but `envelope`/`beatCount` are untouched for
+    /// lighting and haptics.
+    nonisolated(unsafe) static var showBeatsOnVisuals: Bool = true
+
     // ---- Written by the renderer each frame ----
 
     /// Beat-punch envelope: snaps to `loudness` on a beat, decays toward 0.
@@ -44,6 +49,12 @@ final class BeatBus: @unchecked Sendable {
     /// Gate intensity: smoothstep of level between base and full thresholds.
     /// 0 = below the floor (silent), 1 = fully present.
     private(set) var loudness: Float = 0
+
+    /// Scene-facing envelope: same as `envelope` unless "show beats on
+    /// visuals" is off, in which case it returns 0. Lighting reads
+    /// `envelope` directly and is unaffected.
+    var visualEnvelope: Float { Self.showBeatsOnVisuals ? envelope : 0 }
+    var visualBarPhase: Float { Self.showBeatsOnVisuals ? barPhase : 0 }
 
     /// True while there is enough audio present for a beat to count.
     var gateOpen: Bool { loudness > 0 }

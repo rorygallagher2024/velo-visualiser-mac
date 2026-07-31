@@ -82,7 +82,7 @@ final class BarSpectrumScene: VeloScene {
             // Baseline glow.
             col += float3(0.1, 0.35, 0.55) * smoothstep(0.004, 0.0, abs(uv.y - FLOOR_Y));
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

@@ -124,7 +124,7 @@ final class AuroraDriftScene: VeloScene {
             // Deep blue ground glow.
             col += float3(0.0, 0.05, 0.15) * (1.0 - uv.y) * (1.0 + s.bass * 0.5);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

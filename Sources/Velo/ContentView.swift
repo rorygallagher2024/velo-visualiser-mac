@@ -28,6 +28,13 @@ struct ContentView: View {
                 },
                 onToggleHDR: { model.hdrEnabled.toggle() },
                 onTogglePerf: { model.perfOverlay.toggle() },
+                onToggleSyphon: { model.syphonEnabled.toggle() },
+                onToggleBeats: { model.showBeatsOnVisuals.toggle() },
+                onCycleTheme: {
+                    let all = ThemePreset.allCases
+                    let i = all.firstIndex(of: model.themePreset) ?? all.startIndex
+                    model.themePreset = all[(all.distance(from: all.startIndex, to: i) + 1) % all.count]
+                },
                 onStats: { model.statsBox.stats = $0 },
                 frameCap: model.frameCap,
                 sceneIndex: model.sceneIndex,
@@ -35,44 +42,50 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
 
-            if model.perfOverlay {
-                PerfOverlay(
-                    snapshot: model.perf,
-                    scene: SceneCatalog.names[model.sceneIndex],
-                    audio: model.audioStatus,
-                    hdr: model.hdrEnabled,
-                    syphon: model.syphonEnabled,
-                    toneActive: model.toneActive
-                )
-                .padding(20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .transition(.opacity)
-                .allowsHitTesting(false)
-            }
-
-            if model.menuOpen {
-                ControlPanel(model: model)
-                    .padding(20)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else if model.lightingOpen {
-                LightingPanel(model: model)
-                    .padding(20)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            if model.syphonEnabled {
+                SyphonModePanel(model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.black)
             } else {
-                HintBar()
-                    .padding(14)
+                if model.perfOverlay {
+                    PerfOverlay(
+                        snapshot: model.perf,
+                        scene: SceneCatalog.names[model.sceneIndex],
+                        audio: model.audioStatus,
+                        hdr: model.hdrEnabled,
+                        syphon: model.syphonEnabled,
+                        toneActive: model.toneActive
+                    )
+                    .padding(20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+                }
+
+                if model.menuOpen {
+                    ControlPanel(model: model)
+                        .padding(20)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else if model.lightingOpen {
+                    LightingPanel(model: model)
+                        .padding(20)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    HintBar()
+                        .padding(14)
+                }
             }
         }
         .background(.black)
         .animation(.easeOut(duration: 0.18), value: model.menuOpen)
         .animation(.easeOut(duration: 0.18), value: model.lightingOpen)
         .animation(.easeOut(duration: 0.18), value: model.perfOverlay)
+        .animation(.easeOut(duration: 0.18), value: model.syphonEnabled)
         .onReceive(tick) { _ in
             if model.linkEnabled {
                 model.linkPeers = LinkSync.statusPeers
                 model.linkBpm = LinkSync.statusBpm
             }
-            guard model.perfOverlay else { return }
             if let stats = model.statsBox.stats { model.perf = stats.snapshot }
             model.audioStatus = model.audio.status()
         }
@@ -85,7 +98,7 @@ private struct HintBar: View {
     @State private var visible = true
 
     var body: some View {
-        Text("M controls · L lighting · F fullscreen · H HDR · P stats · 1-9 0 / ← → visual")
+        Text("M controls · L lighting · T theme · S syphon · B beats · F fullscreen · H HDR · P stats · ← → visual")
             .font(Velo.light(13))
             .tracking(0.4)
             .foregroundStyle(.white.opacity(0.35))
@@ -145,6 +158,22 @@ private struct ControlPanel: View {
                             + "arrows step through them.")
                 }
 
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Theme")
+                        .font(Velo.label(13))
+                        .foregroundStyle(.white.opacity(0.5))
+                    HStack(spacing: 4) {
+                        ForEach(ThemePreset.allCases, id: \.self) { t in
+                            Button(t.label) { model.themePreset = t }
+                                .buttonStyle(.bordered)
+                                .controlSize(.regular)
+                                .opacity(model.themePreset == t ? 1.0 : 0.4)
+                        }
+                    }
+                    caption("Colour grade applied to every visual. "
+                            + "T cycles through them.")
+                }
+
                 Divider().overlay(.white.opacity(0.12))
 
                 section("Audio")
@@ -180,6 +209,15 @@ private struct ControlPanel: View {
                     }
                     caption("How readily the beat detector fires. Low is "
                             + "calmer, High triggers on quieter hits.")
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Show beats on visuals", isOn: $model.showBeatsOnVisuals)
+                        .toggleStyle(.switch)
+                    caption("When off, visuals respond to the music's energy but "
+                            + "don't flash on individual beats. Useful with chroma "
+                            + "key in OBS, where white flashes go transparent. "
+                            + "Lights and haptics still react to beats.")
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -429,6 +467,140 @@ private struct ControlPanel: View {
             .font(Velo.readout(13))
             .foregroundStyle(.white.opacity(0.65))
             .monospacedDigit()
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(Velo.light(13))
+            .foregroundStyle(.white.opacity(0.5))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Replaces the canvas when Syphon output is active. The renderer keeps
+/// running headless (feeding the Syphon 4K output) while the window shows
+/// this compact control surface.
+private struct SyphonModePanel: View {
+    @Bindable var model: AppModel
+    @State private var devices: [AudioInputDevice] = []
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Wordmark().padding(.bottom, 4)
+
+                    syphonStatus
+
+                    Divider().overlay(.white.opacity(0.12))
+
+                    section("Visual")
+                    Picker("Visual", selection: $model.sceneIndex) {
+                        ForEach(Array(SceneCatalog.names.enumerated()), id: \.offset) { i, n in
+                            Text(n).tag(i)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 280)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Theme")
+                            .font(Velo.label(13))
+                            .foregroundStyle(.white.opacity(0.5))
+                        HStack(spacing: 4) {
+                            ForEach(ThemePreset.allCases, id: \.self) { t in
+                                Button(t.label) { model.themePreset = t }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.regular)
+                                    .opacity(model.themePreset == t ? 1.0 : 0.4)
+                            }
+                        }
+                    }
+
+                    Divider().overlay(.white.opacity(0.12))
+
+                    section("Audio")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("Input", selection: $model.selectedDeviceUID) {
+                            Text("System default").tag(String?.none)
+                            ForEach(devices) { device in
+                                Text(device.name).tag(String?.some(device.uid))
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 280)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Beat Sensitivity")
+                            .font(Velo.label(13))
+                            .foregroundStyle(.white.opacity(0.5))
+                        HStack(spacing: 4) {
+                            ForEach(BeatSensitivity.allCases, id: \.self) { s in
+                                Button(s.label) { model.beatSensitivity = s }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.regular)
+                                    .opacity(model.beatSensitivity == s ? 1.0 : 0.4)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Show beats on visuals", isOn: $model.showBeatsOnVisuals)
+                            .toggleStyle(.switch)
+                        caption("Off for chroma key: prevents white flashes "
+                                + "going transparent. Lights still react.")
+                    }
+
+                    Divider().overlay(.white.opacity(0.12))
+
+                    section("Output")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Syphon output", isOn: $model.syphonEnabled)
+                            .toggleStyle(.switch)
+                        caption("Turn off to return to the live canvas.")
+                    }
+
+                    Divider().overlay(.white.opacity(0.12))
+
+                    Text("← → change visual · S syphon · L lighting · F fullscreen")
+                        .font(Velo.label(12))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .padding(24)
+            }
+        }
+        .frame(maxWidth: 380)
+        .foregroundStyle(.white)
+        .task { devices = AudioEngine.inputDevices() }
+        .onChange(of: model.selectedDeviceUID) { _, uid in
+            model.audio.start(deviceUID: uid)
+        }
+    }
+
+    private var syphonStatus: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(.green)
+                    .frame(width: 8, height: 8)
+                Text("SYPHON ACTIVE")
+                    .font(Velo.display(13))
+                    .tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            Text("3840 \u{00D7} 2160 \u{00B7} \(Int(model.perf.fps)) fps")
+                .font(Velo.readout(14))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.5))
+        }
+    }
+
+    private func section(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(Velo.display(14))
+            .tracking(1.6)
+            .foregroundStyle(.white.opacity(0.45))
     }
 
     private func caption(_ text: String) -> some View {

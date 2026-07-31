@@ -23,7 +23,7 @@ final class FluxScene: VeloScene {
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
-        let beat = BeatBus.current.envelope
+        let beat = BeatBus.current.visualEnvelope
         var packed = SIMD4<Float>(energy.low, energy.mid, energy.high, beat)
         pointer.copyMemory(from: &packed, byteCount: MemoryLayout<SIMD4<Float>>.size)
     }
@@ -153,7 +153,7 @@ final class FluxScene: VeloScene {
             float2 vc = uv / float2(aspect * 0.6, 0.6);
             col *= max(1.0 - 0.25 * dot(vc, vc), 0.0);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

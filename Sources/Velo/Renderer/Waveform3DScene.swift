@@ -355,7 +355,7 @@ final class Waveform3DScene: VeloScene {
             int by = int(in.position.y) % 4;
             col += (float(bayer[by * 4 + bx]) / 16.0 - 0.5) * (1.5 / 255.0);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

@@ -128,7 +128,7 @@ final class SpectrogramScene: VeloScene {
             // brightness multiplier below the knee. Only the loudest material
             // is driven past 1.0.
             float3 c = inferno(m) * (1.0 + 1.3 * smoothstep(0.82, 1.0, m));
-            return float4(c * u.dim, 1.0);
+            return float4(themeGrade(c, u) * u.dim, 1.0);
         }
         """
     }

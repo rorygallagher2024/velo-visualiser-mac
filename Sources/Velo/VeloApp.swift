@@ -113,6 +113,20 @@ final class AppModel {
         }
     }
 
+    var showBeatsOnVisuals: Bool = true {
+        didSet {
+            BeatBus.showBeatsOnVisuals = showBeatsOnVisuals
+            UserDefaults.standard.set(showBeatsOnVisuals, forKey: "velo_show_beats")
+        }
+    }
+
+    var themePreset: ThemePreset = .default {
+        didSet {
+            ThemePreset.current = themePreset
+            UserDefaults.standard.set(themePreset.rawValue, forKey: "velo_theme")
+        }
+    }
+
     let audio = AudioEngine()
     let tone = ToneGenerator()
     let hue = HueState()
@@ -185,6 +199,16 @@ final class AppModel {
            let s = BeatSensitivity(rawValue: raw) {
             self.beatSensitivity = s
             BeatBus.sensitivity = s
+        }
+
+        let beats = UserDefaults.standard.object(forKey: "velo_show_beats") as? Bool ?? true
+        self.showBeatsOnVisuals = beats
+        BeatBus.showBeatsOnVisuals = beats
+
+        if let themeKey = UserDefaults.standard.string(forKey: "velo_theme"),
+           let t = ThemePreset(rawValue: themeKey) {
+            self.themePreset = t
+            ThemePreset.current = t
         }
 
         HueCredentialStore.migrateFromKeychain()

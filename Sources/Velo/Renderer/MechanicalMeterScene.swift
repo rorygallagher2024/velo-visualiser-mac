@@ -233,7 +233,7 @@ final class MechanicalMeterScene: VeloScene {
             float dTip = length(pc - nd * L);
             col += bladeCol * aaFill(0.006, dTip - 0.002) * 0.9;
 
-            return float4(col * u.dim * s.glow, 1.0);
+            return float4(themeGrade(col, u) * u.dim * s.glow, 1.0);
         }
         """
     }

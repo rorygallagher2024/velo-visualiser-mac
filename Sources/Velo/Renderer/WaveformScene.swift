@@ -176,7 +176,7 @@ final class WaveformScene: VeloScene {
             float dith = fract(sin(dot(frag, float2(12.9898, 78.233))) * 43758.5453);
             col += (dith - 0.5) * (1.5 / 255.0);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

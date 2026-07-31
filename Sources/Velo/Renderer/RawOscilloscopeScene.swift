@@ -97,7 +97,7 @@ final class RawOscilloscopeScene: VeloScene {
             // whole colour keeps the hue intact instead of drifting to white.
             constexpr float HDR_BOOST = 10.0;
             float3 col = float3(0.149, 1.0, 0.549) * HDR_BOOST * line;
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

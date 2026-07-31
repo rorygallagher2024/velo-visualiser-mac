@@ -164,7 +164,8 @@ final class ChromaticDotsScene: VeloScene {
             else                       col = float3(1.0, 1.0, 1.0);
 
             col *= (1.0 + in.dotEnergy * 0.6);
-            col *= core * in.dotEnergy * 2.5 * u.dim;
+            col *= core * in.dotEnergy * 2.5;
+            col = themeGrade(col, u) * u.dim;
             return float4(col, 1.0);
         }
         """

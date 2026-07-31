@@ -109,7 +109,8 @@ final class PhyllotaxisScene: VeloScene {
             float d = dot(c, c);
             if (d > 1.0) { discard_fragment(); }
             float glow = exp(-d * 2.2);
-            return float4(in.col * in.bright * glow * u.dim, 1.0);
+            float3 gc = themeGrade(in.col, u);
+            return float4(gc * in.bright * glow * u.dim, 1.0);
         }
         """
     }

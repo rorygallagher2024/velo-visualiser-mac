@@ -139,7 +139,7 @@ final class PocketLedScene: VeloScene {
             // modest so the channels don't all clamp and wash it out to white.
             c = mix(c, mix(zone, PEAK_TINT, 0.25) * 1.7, isPeak);
 
-            return float4(c * shape * u.dim * p.glow, 1.0);
+            return float4(themeGrade(c, u) * shape * u.dim * p.glow, 1.0);
         }
         """
     }

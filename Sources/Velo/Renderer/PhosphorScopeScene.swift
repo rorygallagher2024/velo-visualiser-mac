@@ -156,7 +156,7 @@ final class PhosphorScopeScene: VeloScene {
             cc.x *= aspect;
             col *= smoothstep(1.15, 0.25, length(cc));
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

@@ -91,7 +91,7 @@ final class CircularSpectrumScene: VeloScene {
             // Thin inner ring outline.
             col += float3(0.2, 0.5, 0.8) * smoothstep(0.004, 0.0, abs(radius - INNER));
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

@@ -108,7 +108,7 @@ final class TunnelScene: VeloScene {
             // Ripple crests overdrive the walls as the wave travels away.
             col *= 1.0 + s.low * 2.0 * max(ripple, 0.0);
 
-            return float4(col * u.dim, 1.0);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

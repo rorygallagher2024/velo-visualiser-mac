@@ -91,7 +91,23 @@ extension VeloScene {
             float2 resolution;
             float  time;
             float  dim;
+            float  hueShift;
+            float  saturation;
+            float  tintR;
+            float  tintG;
+            float  tintB;
         };
+
+        static inline float3 themeGrade(float3 col, constant Uniforms &u) {
+            float luma = dot(col, float3(0.2126, 0.7152, 0.0722));
+            col = mix(float3(luma), col, u.saturation);
+            float3 k = float3(0.57735027);
+            float cosA = cos(u.hueShift);
+            col = col * cosA + cross(k, col) * sin(u.hueShift)
+                + k * dot(k, col) * (1.0 - cosA);
+            col *= float3(u.tintR, u.tintG, u.tintB);
+            return max(col, 0.0);
+        }
         """
     }
 }
