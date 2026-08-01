@@ -85,7 +85,7 @@ The canvas carries no on screen controls, so everything is a key.
 
 ## MIDI Control
 
-Velo listens to every connected MIDI device automatically. You assign controls
+The application listens to every connected MIDI device automatically. You assign controls
 via MIDI learn in the settings panel. No config files, no channel hunting.
 
 ### Setup
