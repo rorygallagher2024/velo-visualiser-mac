@@ -42,12 +42,14 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **34 Visuals:**
+* **38 Visuals:**
 * **Syphon Output:** Zero-copy GPU sharing into OBS and any Syphon client at a
   fixed 3840×2160, no window capture needed. When Syphon is active the window
   shows a compact control panel instead of the canvas.
 * **Favourites:** Mark visuals as favourites in the picker and the first ten
   are keyed to 1–9 and 0 for instant recall during a set.
+* **MIDI Control:** Map any MIDI CC or note to step through visuals from a
+  hardware controller. MIDI learn makes setup instant.
 * **Colour Themes:** Five colour grades — Default, Neon, Warm, Cool and Mono —
   applied to every visual. Cycle with the T key or pick from the controls.
 * **Beat Flash Toggle:** Suppress beat-triggered white flashes for chroma-key
@@ -123,6 +125,12 @@ layers in the way.
   with its own energy.
 * **Chromatic Frame.** The same five particle classes confined to the screen edges,
   leaving the centre clear for DJ camera overlays.
+* **Edge Equaliser.** Spectrum bars growing inward from all four screen edges.
+  Bass along the bottom, mids up the sides, treble along the top — an analyser
+  that doubles as a decorative frame with the centre clear.
+* **Edge Waveform.** The live audio waveform traced as a glowing neon line around
+  the screen perimeter. Displacement is perpendicular to the edge, so the line
+  breathes inward on loud passages while the centre stays open.
 * **Crystal Swarm.** A 32,000-particle lattice that breathes and rotates. Bass
   drives waves through the grid, beats bloom the points into bright flashes,
   and the colour palette shifts spatially across the cloud. Density is
@@ -136,6 +144,13 @@ layers in the way.
 * **Flux.** A volumetric kaleidoscope corridor. The camera drifts through an
   infinite twisted tunnel whose cross-section is mirrored into morphing N-fold
   symmetry, with three layers of coloured glow accumulating along every ray.
+* **Fractal Cathedral.** A ray-marched Mandelbox fractal — vast alien
+  architecture with real lighting and ambient occlusion. Bass breathes the fold
+  scale so the structure morphs, beats pulse the emissive rim, treble adds
+  sparkle. Orbit-trap colouring drifts a warm palette through the geometry.
+* **Corner Shatter.** Beat-triggered geometric fragments that explode outward
+  from each corner and settle back. Bass controls fragment size, treble adds
+  sparkle as they scatter. Event-driven — quiet between hits.
 * **Audio Web.** A reactive network of drifting points connected by proximity
   lines. Bass speeds the points, mids brighten the connections, highs flare
   the dots.
@@ -158,6 +173,33 @@ The canvas carries no on screen controls, so everything is a key.
 | `P` | diagnostics overlay |
 | `1` to `9`, `0` | jump to a favourite (or catalogue position when no favourites) |
 | `left` `right` | step through the visuals |
+
+## MIDI Control
+
+Velo listens to every connected MIDI device automatically. You assign controls
+via MIDI learn in the settings panel — no config files, no channel hunting.
+
+### Setup
+
+1. Connect your MIDI controller.
+2. Open the settings panel (`M`).
+3. Scroll to the **MIDI** section.
+4. Click **Learn** next to "Next visual" or "Previous visual".
+5. Move the knob, fader, or button on your controller that you want to use.
+6. The mapping appears immediately and is saved across launches.
+
+### What you can map
+
+| Action | What it does |
+|--------|-------------|
+| **Previous visual** | Step one visual backward in the catalogue |
+| **Next visual** | Step one visual forward in the catalogue |
+
+Both CC messages (knobs, faders, buttons) and note-on messages (pads, keys) are
+supported. The mapping stores the MIDI channel and controller/note number, so
+you can use any device and any control.
+
+To remove a mapping, click **Clear** next to it.
 
 ## Why Velo Visualiser is Fast
 

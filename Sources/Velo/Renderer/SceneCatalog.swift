@@ -38,12 +38,16 @@ enum SceneCatalog {
         "Beat Fireworks",
         "Chromatic Dots",
         "Chromatic Frame",
+        "Edge Equaliser",
+        "Edge Waveform",
         "Crystal Swarm",
         "Particle Dust",
         "Ethereal Ribbons",
         "Abstract Waveform",
         "Spectral Canyon",
         "Flux",
+        "Fractal Cathedral",
+        "Corner Shatter",
         "Audio Web",
     ]
 
@@ -76,12 +80,16 @@ enum SceneCatalog {
             BeatFireworksScene(),
             ChromaticDotsScene(),
             ChromaticFrameScene(),
+            EdgeEqualiserScene(),
+            EdgeWaveformScene(),
             CrystalSwarmScene(),
             ParticleDustScene(),
             EtherealRibbonsScene(),
             AbstractWaveformScene(),
             SpectralCanyonScene(),
             FluxScene(),
+            MandelboxScene(),
+            CornerShatterScene(),
             AudioWebScene(),
         ]
     }

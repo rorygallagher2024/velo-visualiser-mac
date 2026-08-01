@@ -142,6 +142,10 @@ final class AppModel {
 
     static let swarmDensityPresets = [32, 24, 18, 12, 8]
 
+    var visualsDisabled: Bool = false {
+        didSet { UserDefaults.standard.set(visualsDisabled, forKey: "velo_visuals_off") }
+    }
+
     var favourites: [Int] = [] {
         didSet { UserDefaults.standard.set(favourites, forKey: "velo_favourites") }
     }
@@ -159,6 +163,7 @@ final class AppModel {
     let hue = HueState()
     let lifx = LifxState()
     let nanoleaf = NanoleafState()
+    let midi = MidiController()
 
     /// Test-tone mode. Not persisted — always starts on mic.
     var toneActive: Bool = false {
@@ -238,6 +243,8 @@ final class AppModel {
             ThemePreset.current = t
         }
 
+        self.visualsDisabled = UserDefaults.standard.bool(forKey: "velo_visuals_off")
+
         let grid = UserDefaults.standard.integer(forKey: "velo_swarm_grid")
         if grid >= 6 && grid <= 32 {
             self.crystalSwarmGrid = grid
@@ -253,5 +260,16 @@ final class AppModel {
         if ProcessInfo.processInfo.environment["VELO_SELFTEST"] != nil { SelfTest.run() }
         VeloLog.begin()
         audio.start()
+
+        midi.onAction = { [weak self] action in
+            guard let self else { return }
+            let count = SceneCatalog.names.count
+            switch action {
+            case .previousVisual:
+                sceneIndex = ((sceneIndex - 1) % count + count) % count
+            case .nextVisual:
+                sceneIndex = (sceneIndex + 1) % count
+            }
+        }
     }
 }

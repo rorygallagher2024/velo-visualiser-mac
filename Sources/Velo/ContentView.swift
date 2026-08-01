@@ -5,6 +5,7 @@ import SwiftUI
 /// and every one of them has a key.
 struct ContentView: View {
     @Bindable var model: AppModel
+    @State private var keyMonitor: Any?
 
     /// Polled rather than pushed. The stats are written from the render thread
     /// every frame, and driving SwiftUI at that rate would spend more time
@@ -63,44 +64,55 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
 
+            if model.visualsDisabled && !model.syphonEnabled {
+                Color.black
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+
             if model.syphonEnabled && !model.visualPickerOpen {
                 SyphonModePanel(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.black)
-            } else if !model.syphonEnabled {
-                if model.perfOverlay {
-                    PerfOverlay(
-                        snapshot: model.perf,
-                        scene: SceneCatalog.names[model.sceneIndex],
-                        audio: model.audioStatus,
-                        hdr: model.hdrEnabled,
-                        syphon: model.syphonEnabled,
-                        toneActive: model.toneActive
-                    )
-                    .padding(20)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-                }
+            }
 
-                if model.menuOpen {
-                    ControlPanel(model: model)
-                        .padding(20)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                } else if model.lightingOpen {
-                    LightingPanel(model: model)
-                        .padding(20)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                } else if !model.visualPickerOpen {
-                    HintBar(hdrAvailable: model.hdrAvailable)
-                        .padding(14)
-                }
+            if !model.syphonEnabled && model.perfOverlay {
+                PerfOverlay(
+                    snapshot: model.perf,
+                    scene: SceneCatalog.names[model.sceneIndex],
+                    audio: model.audioStatus,
+                    hdr: model.hdrEnabled,
+                    syphon: model.syphonEnabled,
+                    toneActive: model.toneActive
+                )
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .transition(.opacity)
+                .allowsHitTesting(false)
+            }
+
+            if model.menuOpen {
+                ControlPanel(model: model)
+                    .padding(20)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+
+            if model.lightingOpen {
+                LightingPanel(model: model)
+                    .padding(20)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
             if model.visualPickerOpen {
                 VisualPickerPanel(model: model)
                     .padding(20)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+
+            if !model.menuOpen && !model.lightingOpen && !model.visualPickerOpen
+                && !model.syphonEnabled {
+                HintBar(hdrAvailable: model.hdrAvailable)
+                    .padding(14)
             }
         }
         .background(.black)
@@ -116,6 +128,89 @@ struct ContentView: View {
             }
             if let stats = model.statsBox.stats { model.perf = stats.snapshot }
             model.audioStatus = model.audio.status()
+        }
+        .onAppear { installKeyMonitor() }
+        .onDisappear {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        }
+    }
+
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard let window = NSApp.keyWindow,
+                  !(window.firstResponder is MetalCanvasNSView)
+            else { return event }
+
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "m":
+                model.menuOpen.toggle()
+                if model.menuOpen {
+                    model.lightingOpen = false; model.visualPickerOpen = false
+                }
+                return nil
+            case "l":
+                model.lightingOpen.toggle()
+                if model.lightingOpen {
+                    model.menuOpen = false; model.visualPickerOpen = false
+                }
+                return nil
+            case "v":
+                model.visualPickerOpen.toggle()
+                if model.visualPickerOpen {
+                    model.menuOpen = false; model.lightingOpen = false
+                }
+                return nil
+            case "h":
+                if model.hdrAvailable { model.hdrEnabled.toggle() }
+                return nil
+            case "p":
+                model.perfOverlay.toggle()
+                return nil
+            case "s":
+                model.syphonEnabled.toggle()
+                return nil
+            case "b":
+                model.showBeatsOnVisuals.toggle()
+                return nil
+            case "t":
+                let all = ThemePreset.allCases
+                let i = all.firstIndex(of: model.themePreset) ?? all.startIndex
+                model.themePreset = all[(all.distance(from: all.startIndex, to: i) + 1) % all.count]
+                return nil
+            case "d":
+                guard SceneCatalog.names[model.sceneIndex] == "Crystal Swarm" else { return event }
+                let presets = AppModel.swarmDensityPresets
+                let idx = presets.firstIndex(of: model.crystalSwarmGrid)
+                    .map { ($0 + 1) % presets.count } ?? 0
+                model.crystalSwarmGrid = presets[idx]
+                return nil
+            default:
+                if let text = event.charactersIgnoringModifiers, let digit = Int(text) {
+                    let slot = digit == 0 ? 9 : digit - 1
+                    let target: Int?
+                    if !model.favourites.isEmpty {
+                        target = slot < model.favourites.count ? model.favourites[slot] : nil
+                    } else {
+                        target = slot < SceneCatalog.names.count ? slot : nil
+                    }
+                    if let target {
+                        model.sceneIndex = target
+                        return nil
+                    }
+                }
+                switch Int(event.keyCode) {
+                case 124:
+                    let count = SceneCatalog.names.count
+                    model.sceneIndex = (model.sceneIndex + 1) % count
+                    return nil
+                case 123:
+                    let count = SceneCatalog.names.count
+                    model.sceneIndex = ((model.sceneIndex - 1) % count + count) % count
+                    return nil
+                default:
+                    return event
+                }
+            }
         }
     }
 }
@@ -435,6 +530,11 @@ private struct ControlPanel: View {
 
                 Divider().overlay(.white.opacity(0.12))
 
+                section("MIDI")
+                midiMappingView
+
+                Divider().overlay(.white.opacity(0.12))
+
                 section("About")
                 VStack(alignment: .leading, spacing: 6) {
                     Button("About & Licenses") {
@@ -537,6 +637,55 @@ private struct ControlPanel: View {
             .font(Velo.readout(13))
             .foregroundStyle(.white.opacity(0.65))
             .monospacedDigit()
+    }
+
+    private var midiMappingView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            midiRow("Previous visual", trigger: model.midi.mapping.previousVisual,
+                    learning: model.midi.learnTarget == .previousVisual) {
+                model.midi.learnTarget = model.midi.learnTarget == .previousVisual
+                    ? nil : .previousVisual
+            } clear: {
+                model.midi.mapping.previousVisual = nil
+            }
+
+            midiRow("Next visual", trigger: model.midi.mapping.nextVisual,
+                    learning: model.midi.learnTarget == .nextVisual) {
+                model.midi.learnTarget = model.midi.learnTarget == .nextVisual
+                    ? nil : .nextVisual
+            } clear: {
+                model.midi.mapping.nextVisual = nil
+            }
+
+            caption("Connect a MIDI controller and press Learn to assign controls.")
+        }
+    }
+
+    private func midiRow(_ label: String, trigger: MidiController.MidiTrigger?,
+                         learning: Bool,
+                         learn: @escaping () -> Void,
+                         clear: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(Velo.label(13))
+                .foregroundStyle(.white.opacity(0.5))
+            HStack(spacing: 8) {
+                Text(trigger?.displayName ?? "—")
+                    .font(Velo.readout(13))
+                    .foregroundStyle(.white.opacity(trigger != nil ? 0.8 : 0.3))
+                    .frame(width: 100, alignment: .leading)
+                Button(learning ? "Waiting…" : "Learn") { learn() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .opacity(learning ? 1.0 : 0.6)
+                if trigger != nil {
+                    Button("Clear") { clear() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .opacity(0.5)
+                }
+            }
+        }
     }
 
     private func caption(_ text: String) -> some View {
@@ -873,6 +1022,7 @@ private struct LightingPanel: View {
                 lightingHeader
                 brandPicker
                 brandContent
+                visualsToggle
                 lightingFooter
             }
             .padding(20)
@@ -918,8 +1068,23 @@ private struct LightingPanel: View {
         }
     }
 
+    private var visualsToggle: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider().overlay(.white.opacity(0.10))
+            Toggle("Disable visuals", isOn: $model.visualsDisabled)
+                .toggleStyle(.switch)
+                .disabled(model.syphonEnabled)
+            Text(model.syphonEnabled
+                 ? "Visuals are already off-screen in Syphon mode."
+                 : "Black out the canvas and run lighting only.")
+                .font(Velo.light(12))
+                .foregroundStyle(.white.opacity(0.35))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var lightingFooter: some View {
-        Text("L close · M controls")
+        Text("L close \u{00B7} M controls")
             .font(Velo.label(12))
             .foregroundStyle(.white.opacity(0.3))
     }
