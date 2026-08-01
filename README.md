@@ -154,13 +154,16 @@ code is available in this repository.
 
 To open it:
 
-1. Right-click (or Control-click) the app and choose **Open**.
-2. macOS will show a warning dialog. Click **Open** to confirm.
+1. Double-click the app. macOS will block it and show a warning.
+2. Open **System Settings > Privacy & Security**.
+3. Scroll down to the Security section. You will see a message that the app
+   was blocked. Click **Open Anyway**.
+4. macOS will ask for confirmation. Click **Open**.
 
 You only need to do this once. After the first launch macOS remembers your
 choice and the app opens normally from then on.
 
-If you prefer, you can also remove the quarantine attribute from the terminal:
+Alternatively, you can remove the quarantine attribute from the terminal:
 
 ```bash
 xattr -d com.apple.quarantine "Velo Visualiser.app"
