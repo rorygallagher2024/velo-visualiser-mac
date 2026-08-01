@@ -24,14 +24,11 @@ layers in the way.
    visualisers, except now capable of being more responsive at high frame rates with HDR highlights,
    on a canvas that fills whatever display you give it.
 
-2. **A live performance tool.** It is built to be captured. The canvas carries
-   no on screen controls at all, so nothing of the app's own interface can land
-   in a recording or a stream, and everything is on a key instead. Point a
-   capture source at the window, or run it fullscreen on a projector or a second
-   display.
+2. **A live performance tool.** With built-in Syphon support - It is built to be captured. 
+    The canvas carries no on screen controls at all, so nothing of the app's own interface can
+    land in a recording or a stream, and everything is on a key instead.
 
-3. **Watching what your mix is actually doing.** Most of the visuals are
-   instruments rather than decoration: a real third octave analyser, two
+4. **Watching what your mix is actually doing.** With a real third octave analyser, two
    oscilloscopes, a scrolling spectrogram and a peak reading LED panel, all fed
    from the same low latency capture.
 
