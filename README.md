@@ -42,7 +42,6 @@ layers in the way.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
-* **38 Visuals:**
 * **Syphon Output:** Zero-copy GPU sharing into OBS and any Syphon client at a
   fixed 3840×2160, no window capture needed. When Syphon is active the window
   shows a compact control panel instead of the canvas.
@@ -64,96 +63,6 @@ layers in the way.
   audio input, on a key. Off by default, since it draws over the canvas.
 * **No Nonsense:** 100% local processing. No data collection. No ads. No cloud
   access at all.
-
-## The visuals
-
-**Instruments**, which are honest readouts of the signal:
-
-* **Level Meter.** A broadcast-style PPM with peak hold, calibrated
-  ballistics and a dBFS scale.
-* **Mechanical Meter.** A needle meter with realistic inertia and overshoot.
-* **Spectrum Analyser.** Thirty one third octave bands with peak programme
-  ballistics and gravity peak caps.
-* **Raw Oscilloscope.** A single hairline straight from the audio at flat linear
-  gain. No smoothing and no auto gain, so a hot signal genuinely runs off the top
-  rather than being flattered.
-* **Phosphor Scope.** The same trace as a CRT: a bright filament in a coloured
-  halo, with edge fringing and beam dwell.
-* **Circular Spectrum.** The reading bent into a ring, 128 bars with peak dots.
-* **Pocket LED.** A dot matrix panel on the green through amber to red hardware
-  ladder, with a standby that wakes on the first signal.
-* **Spectrum Bars.** The classic coloured bars with gravity peak caps.
-* **3D LED.** The LED panel as an actual object, lenses and chassis, with a
-  camera drifting around it.
-* **Spectrogram.** A scrolling heatmap of frequency against time. Watch a beat's
-  structure scroll away rather than only seeing the present.
-* **Waveform.** Nine seconds of rolling min and max history, with bass, mid and
-  high painted as separate layers, so a kick and a hat are two different shapes
-  rather than one blended colour.
-* **Waveform 3D.** The same three envelopes stood up in space as glowing
-  curtains running away toward a vanishing point, newest audio beside the
-  camera. The music flows toward you.
-* **Waveform 3D Void.** The same corridor with the lights off. No air, no floor
-  grid, no ambience: just the curtains and their reflection on pure black.
-
-**Generative**, which are driven by the sound rather than measuring it:
-
-* **Beat Pulse.** A warm core that slams open on the beat with expanding
-  shockwave rings. Simple and unmissable.
-* **Starscape.** A hyperspace star field flying toward you. Bass accelerates
-  the warp, beats flash a subset of stars in vivid colour.
-* **Tunnel.** An infinite hexagonal corridor with bass ripples travelling away
-  down it.
-* **Laser Array.** Beams out of a vanishing point, the way a rig full of
-  scanners looks through haze.
-* **Spectral Bloom.** A kaleidoscope over a fractal flow.
-* **Aurora Drift.** Curtains of light over a parallax starfield.
-* **Quicksilver.** A mass of liquid metal, raymarched, reflecting a room that is
-  also the background.
-* **Electric Iris.** A volumetric iris: gaseous nebula around a black pupil that
-  dilates with the bass, with SDF lightning arcs on the treble.
-* **Nebula.** A volumetric liquid nebula field with audio-reactive FBM turbulence,
-  colour shifts, and a twinkling starfield.
-* **Phyllotaxis Bloom.** A sunflower spiral where each dot owns one FFT bin,
-  centre to rim mapping lows to highs. The bloom breathes with the spectrum.
-* **Corner Bloom.** Four spirals radiating from the screen corners, leaving the
-  centre clear for camera or content overlays.
-* **Beat Fireworks.** Bass transients launch radial bursts of sparks that arc
-  under gravity and fade, over a twinkling star field.
-* **Chromatic Dots.** Fifteen thousand particles in five colours, one per musical
-  element: bass, mid, treble, loudness, beat. Each class appears and disappears
-  with its own energy.
-* **Chromatic Frame.** The same five particle classes confined to the screen edges,
-  leaving the centre clear for DJ camera overlays.
-* **Edge Equaliser.** Spectrum bars growing inward from all four screen edges.
-  Bass along the bottom, mids up the sides, treble along the top — an analyser
-  that doubles as a decorative frame with the centre clear.
-* **Edge Waveform.** The live audio waveform traced as a glowing neon line around
-  the screen perimeter. Displacement is perpendicular to the edge, so the line
-  breathes inward on loud passages while the centre stays open.
-* **Crystal Swarm.** A 32,000-particle lattice that breathes and rotates. Bass
-  drives waves through the grid, beats bloom the points into bright flashes,
-  and the colour palette shifts spatially across the cloud. Density is
-  adjustable with the D key or the settings panel.
-* **Particle Dust.** A gentle cloud of drifting particles.
-* **Ethereal Ribbons.** Flowing ribbons of light, audio-reactive.
-* **Abstract Waveform.** A stylised waveform rendering.
-* **Spectral Canyon.** A 3D wireframe landscape sculpted from recent spectrum
-  history, scrolling toward the horizon. Curated colour ramp from deep indigo
-  through cyan to magenta, with peak caps that flare on the beat.
-* **Flux.** A volumetric kaleidoscope corridor. The camera drifts through an
-  infinite twisted tunnel whose cross-section is mirrored into morphing N-fold
-  symmetry, with three layers of coloured glow accumulating along every ray.
-* **Fractal Cathedral.** A ray-marched Mandelbox fractal — vast alien
-  architecture with real lighting and ambient occlusion. Bass breathes the fold
-  scale so the structure morphs, beats pulse the emissive rim, treble adds
-  sparkle. Orbit-trap colouring drifts a warm palette through the geometry.
-* **Corner Shatter.** Beat-triggered geometric fragments that explode outward
-  from each corner and settle back. Bass controls fragment size, treble adds
-  sparkle as they scatter. Event-driven — quiet between hits.
-* **Audio Web.** A reactive network of drifting points connected by proximity
-  lines. Bass speeds the points, mids brighten the connections, highs flare
-  the dots.
 
 ## Controls
 
