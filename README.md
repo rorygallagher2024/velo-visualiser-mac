@@ -145,6 +145,27 @@ engine and then again by the scene.
 
 Apple Silicon and macOS 26 or newer.
 
+## First launch
+
+macOS will block the app the first time you open it because it is not signed
+with an Apple Developer certificate. This is normal for open-source software
+distributed outside the App Store. The app is safe to run, and the full source
+code is available in this repository.
+
+To open it:
+
+1. Right-click (or Control-click) the app and choose **Open**.
+2. macOS will show a warning dialog. Click **Open** to confirm.
+
+You only need to do this once. After the first launch macOS remembers your
+choice and the app opens normally from then on.
+
+If you prefer, you can also remove the quarantine attribute from the terminal:
+
+```bash
+xattr -d com.apple.quarantine "Velo Visualiser.app"
+```
+
 ## Building from Source
 
 ```bash
