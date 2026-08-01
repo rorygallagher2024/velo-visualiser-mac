@@ -10,7 +10,7 @@ objective: **low latency**.
 Point it at any audio input and the picture moves with the sound. The app hears,
 analyses and draws in **under 10 ms**; the finished frame then rides the normal
 display pipeline that no app can skip, reaching your eyes in roughly
-**10 to 25 ms** end to end on a 120 Hz display.
+**10 to 25 ms** on a 120 Hz display or **6 to 17 ms** at 240 Hz.
 
 It is the Mac sibling of the Android
 [Velo Visualiser](https://github.com/rorygallagher2024/velo-visualiser/) and
@@ -130,7 +130,9 @@ The finished frame then travels the display pipeline like every app's frames do.
 | **Render** | Metal 4 shader execution | 0.5 to 7 ms |
 | **App total** | **Input to finished frame** | **~2 to 9 ms** |
 | **Display** | Vsync and compositor at 120 Hz | ~8 to 16 ms |
-| **TOTAL** | **Input to eyes** | **~10 to 25 ms** |
+| **TOTAL (120 Hz)** | **Input to eyes** | **~10 to 25 ms** |
+| **Display** | Vsync and compositor at 240 Hz | ~4 to 8 ms |
+| **TOTAL (240 Hz)** | **Input to eyes** | **~6 to 17 ms** |
 
 Analysis and render figures are measured rather than estimated. The spread on
 render is the difference between the cheapest instrument and the heaviest
