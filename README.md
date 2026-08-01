@@ -21,8 +21,8 @@ layers in the way.
 ## What's the app for
 
 1. **Visualising music on a Mac.** A modern take on the classic desktop
-   visualisers, except now at 120 fps with HDR highlights, on a canvas that
-   fills whatever display you give it.
+   visualisers, except now capable of being more responsive at high frame rates with HDR highlights,
+   on a canvas that fills whatever display you give it.
 
 2. **A live performance tool.** It is built to be captured. The canvas carries
    no on screen controls at all, so nothing of the app's own interface can land
@@ -37,8 +37,8 @@ layers in the way.
 
 ## Core Features
 
-* **High-FPS, HDR-Capable Visuals:** Targets 120 fps and holds it, with real
-  highlights on displays that support extended range.
+* **High-FPS, HDR-Capable Visuals:** With real highlights on displays that supports
+  extended range.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
