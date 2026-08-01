@@ -49,13 +49,13 @@ layers in the way.
   are keyed to 1–9 and 0 for instant recall during a set.
 * **MIDI Control:** Map any MIDI CC or note to step through visuals from a
   hardware controller. MIDI learn makes setup instant.
-* **Colour Themes:** Five colour grades — Default, Neon, Warm, Cool and Mono —
+* **Colour Themes:** Five colour grades (Default, Neon, Warm, Cool and Mono)
   applied to every visual. Cycle with the T key or pick from the controls.
 * **Beat Flash Toggle:** Suppress beat-triggered white flashes for chroma-key
   workflows where white goes transparent. Lights and haptics still react.
 * **Smart Lighting:** Philips Hue Entertainment streaming, LIFX and Nanoleaf
   sync, with reactivity presets and per-parameter tuning.
-* **Beat Sensitivity:** Low, Standard or High — controls how readily the beat
+* **Beat Sensitivity:** Low, Standard or High. Controls how readily the beat
   detector fires, scaling the threshold and the audio-presence gate.
 * **Ableton Link & 4/4 Music Mode:** Wireless tempo sync or automatic
   beat-grid locking for steady electronic music.
@@ -86,7 +86,7 @@ The canvas carries no on screen controls, so everything is a key.
 ## MIDI Control
 
 Velo listens to every connected MIDI device automatically. You assign controls
-via MIDI learn in the settings panel — no config files, no channel hunting.
+via MIDI learn in the settings panel. No config files, no channel hunting.
 
 ### Setup
 
