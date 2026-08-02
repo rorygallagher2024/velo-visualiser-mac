@@ -15,9 +15,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.5.2</string>
+    <string>1.5.3</string>
     <key>CFBundleVersion</key>
-    <string>8</string>
+    <string>9</string>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
     <key>NSHighResolutionCapable</key>
@@ -27,6 +27,21 @@
          app is denied silently. -->
     <key>NSMicrophoneUsageDescription</key>
     <string>Velo Visualiser reads a live audio input so it can draw the music. Choose BlackHole to visualise system audio, or your interface to take the mixer feed.</string>
+    <!-- Talking to a Hue bridge is a LAN conversation, and since macOS 15 that
+         needs the user's consent. Without this string there is nothing to put
+         in the prompt, so the grant never settles and every request to the
+         bridge fails — which surfaced as the bridge having no Entertainment
+         Areas. Android has no equivalent gate, which is why the Android build
+         never showed this and the port did. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Velo Visualiser finds your Philips Hue bridge on the local network and streams colour to it in time with the music.</string>
+    <!-- Bonjour browsing is separately gated: a service type that is not
+         declared here is simply never discovered, leaving bridge discovery to
+         the Philips cloud endpoint and so broken without internet. -->
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_hue._tcp</string>
+    </array>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
 	<key>ATSApplicationFontsPath</key>

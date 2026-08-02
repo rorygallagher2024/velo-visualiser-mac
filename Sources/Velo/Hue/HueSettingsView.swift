@@ -105,10 +105,15 @@ struct HueSettingsView: View {
                 // Only reachable once the bridge has answered, so this now
                 // means what it says. A failed lookup lands in .error instead.
                 Text("The bridge reports no Entertainment Areas.\n"
-                     + "Create one in the Hue app, then reopen this panel.")
+                     + "Create one in the Hue app, then check again.")
                     .font(Velo.light(13))
                     .foregroundStyle(.white.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
+                // Without this the only listed action is Forget Bridge, which
+                // is a destructive answer to what is usually a transient miss.
+                Button("Check Again") { hue.retryLoadAreas() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             } else if hue.areas.count == 1 {
                 if let area = hue.areas.first {
                     Text("\(area.name) (\(area.channels.count) lights)")
@@ -224,11 +229,18 @@ struct HueSettingsView: View {
                 .font(Velo.light(14))
                 .foregroundStyle(.red.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
-            Button("OK") {
-                hue.phase = hue.store.load() != nil ? .ready : .unpaired
+            HStack(spacing: 8) {
+                if hue.store.load() != nil {
+                    Button("Try Again") { hue.retryLoadAreas() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                }
+                Button("OK") {
+                    hue.phase = hue.store.load() != nil ? .ready : .unpaired
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
         }
     }
 
@@ -632,6 +644,19 @@ final class HueState: @unchecked Sendable {
     }
 
     /// Load areas and move to .ready when we have saved credentials but aren't streaming.
+    /// Re-run the area lookup after a failure.
+    ///
+    /// The startup lookup fires from `init`, which on macOS is exactly when a
+    /// Local Network prompt may still be unanswered — and an ad-hoc signed
+    /// build gets a fresh cdhash on every version, so that grant is dropped
+    /// each time the app in /Applications is replaced. Without a retry the only
+    /// listed way out is Forget Bridge, which is why re-pairing looked like the
+    /// cure: it was simply the one button that ran a network call again.
+    func retryLoadAreas() {
+        phase = .ready
+        loadAreasForReady()
+    }
+
     private func loadAreasForReady() {
         guard let creds = store.load() else { return }
         Task {

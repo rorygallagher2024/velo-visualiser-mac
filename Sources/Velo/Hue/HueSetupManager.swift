@@ -109,12 +109,20 @@ final class HueSetupManager: @unchecked Sendable {
         req.setValue(creds.username, forHTTPHeaderField: "hue-application-key")
 
         let (data, response) = try await session.data(for: req)
-        if let http = response as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 403 {
+
+        // The bridge's own words, verbatim. This call failing while a freshly
+        // paired key succeeds seconds later is not something we can reason our
+        // way to — the reply says which it is, and nothing was recording it.
+        // The body carries area metadata and error text, never key material.
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        let body = String(data: data.prefix(600), encoding: .utf8) ?? "<not utf8>"
+        VeloLog.write("hue", "listAreas HTTP \(status) key=\(HueCredentialStore.fingerprint(creds.username)) body=\(body)")
+
+        if status == 401 || status == 403 {
             throw HueSetupError.authFailed
         }
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            VeloLog.write("hue", "listAreas HTTP \(http.statusCode) from \(creds.bridgeIp)")
-            throw HueSetupError.bridgeError("Bridge returned HTTP \(http.statusCode).")
+        if !(200..<300).contains(status) {
+            throw HueSetupError.bridgeError("Bridge returned HTTP \(status).")
         }
 
         // An unreadable body is a failure, not an empty list. Returning []
