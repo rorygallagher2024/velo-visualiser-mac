@@ -8,21 +8,18 @@ import CSyphon
 /// `publishFrameTexture:onCommandBuffer:` expects a standard
 /// `id<MTLCommandBuffer>`. A lightweight standard queue handles the blit.
 ///
+///
 /// To eliminate tearing, the renderer draws into a persistent offscreen
 /// texture (not the drawable). The offscreen texture is not
 /// `framebufferOnly` and is not recycled, so Syphon can safely read it.
-/// An `MTLEvent` serialises the two queues: the Metal 4 render signals
-/// after the scene render completes, and the Syphon blit waits before
-/// reading the offscreen texture.
+/// The Syphon blit is scheduled from the Metal 4 commit feedback handler,
+/// ensuring the render is fully complete before Syphon reads it.
 final class SyphonOutput: @unchecked Sendable {
 
     private let device: MTLDevice
     private let blitQueue: MTLCommandQueue
     private var server: SyphonMetalServer?
     private let lock = NSLock()
-
-    private let event: MTLEvent
-    private var eventValue: UInt64 = 0
 
     /// The offscreen texture Syphon reads from. Allocated lazily at the
     /// first publish, and reallocated if the size changes.
@@ -31,12 +28,9 @@ final class SyphonOutput: @unchecked Sendable {
     private var offscreenHeight: Int = 0
 
     init?(device: MTLDevice) {
-        guard let queue = device.makeCommandQueue(),
-              let event = device.makeEvent()
-        else { return nil }
+        guard let queue = device.makeCommandQueue() else { return nil }
         self.device = device
         self.blitQueue = queue
-        self.event = event
         blitQueue.label = "com.lowlatency.velo.syphon"
     }
 
@@ -83,24 +77,16 @@ final class SyphonOutput: @unchecked Sendable {
         return tex
     }
 
-    /// Signal the event from the Metal 4 queue after the render pass.
-    /// Call from the render thread before `queue.commit`.
-    var currentEvent: MTLEvent { event }
-    var nextEventValue: UInt64 {
-        eventValue &+= 1
-        return eventValue
-    }
-
     /// Publish the offscreen texture to Syphon clients.
-    /// Call from the render thread AFTER `queue.commit`.
-    func publish(texture: MTLTexture, afterEvent eventVal: UInt64) {
+    /// Call from the render thread AFTER the render has completed on the GPU
+    /// (e.g., from the feedback handler).
+    func publish(texture: MTLTexture) {
         lock.lock()
         guard let server else { lock.unlock(); return }
         guard server.hasClients else { lock.unlock(); return }
         lock.unlock()
 
         guard let cb = blitQueue.makeCommandBuffer() else { return }
-        cb.encodeWaitForEvent(event, value: eventVal)
 
         let region = NSRect(
             x: 0, y: 0,

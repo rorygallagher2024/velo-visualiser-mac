@@ -61,7 +61,9 @@ struct ContentView: View {
                 frameCap: model.frameCap,
                 sceneIndex: model.sceneIndex,
                 onSceneChange: { model.sceneIndex = $0 },
-                favourites: model.favourites
+                favourites: model.favourites,
+                transitionsEnabled: model.transitionsEnabled,
+                transitionDuration: model.transitionDuration
             )
             .ignoresSafeArea()
 
@@ -197,13 +199,7 @@ struct ContentView: View {
             default:
                 if let text = event.charactersIgnoringModifiers, let digit = Int(text) {
                     let slot = digit == 0 ? 9 : digit - 1
-                    let target: Int?
-                    if !model.favourites.isEmpty {
-                        target = slot < model.favourites.count ? model.favourites[slot] : nil
-                    } else {
-                        target = slot < SceneCatalog.names.count ? slot : nil
-                    }
-                    if let target {
+                    if let target = model.sceneForSlot(slot) {
                         model.sceneIndex = target
                         return nil
                     }
@@ -304,6 +300,28 @@ private struct ControlPanel: View {
                 Wordmark().padding(.bottom, 18)
 
                 section("Appearance")
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Crossfade Transitions", isOn: $model.transitionsEnabled)
+                        .toggleStyle(.switch)
+                    
+                    if model.transitionsEnabled {
+                        HStack(spacing: 8) {
+                            Text("Time")
+                                .font(Velo.label(12))
+                                .foregroundStyle(.white.opacity(0.5))
+                                .frame(width: 36, alignment: .leading)
+                            Slider(value: $model.transitionDuration, in: 1...30, step: 0.5)
+                                .frame(maxWidth: .infinity)
+                            Text(String(format: "%.1fs", model.transitionDuration))
+                                .font(Velo.readout(12))
+                                .monospacedDigit()
+                                .frame(width: 50, alignment: .trailing)
+                        }
+                    }
+                    caption("Smoothly blend between scenes over time when switching.")
+                }
+                
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Theme")
                         .font(Velo.label(13))
@@ -337,6 +355,14 @@ private struct ControlPanel: View {
                         }
                         caption("Particle count. Fewer dots for a subtler look "
                                 + "over a DJ feed. D cycles through presets.")
+                    }
+                }
+
+                if SceneCatalog.names[model.sceneIndex] == "Dynamic Web" {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Coloured", isOn: $model.dynamicWebColor)
+                            .toggleStyle(.switch)
+                        caption("Switch between dynamic multi-coloured audio reactivity and a clean monochrome look.")
                     }
                 }
 
@@ -586,7 +612,9 @@ private struct ControlPanel: View {
             .padding(20)
         }
         .frame(width: 340)
-        .background(.black.opacity(0.82), in: .rect(cornerRadius: 14))
+        .background(.black.opacity(0.55), in: .rect(cornerRadius: 14))
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 14))
+        .environment(\.colorScheme, .dark)
         .overlay(
             RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.10), lineWidth: 1)
         )
@@ -672,49 +700,112 @@ private struct ControlPanel: View {
 
     private var midiMappingView: some View {
         VStack(alignment: .leading, spacing: 10) {
-            midiRow("Previous visual", trigger: model.midi.mapping.previousVisual,
-                    learning: model.midi.learnTarget == .previousVisual) {
-                model.midi.learnTarget = model.midi.learnTarget == .previousVisual
-                    ? nil : .previousVisual
-            } clear: {
-                model.midi.mapping.previousVisual = nil
-            }
+            Toggle("MIDI control", isOn: $model.midi.enabled)
+                .toggleStyle(.switch)
 
-            midiRow("Next visual", trigger: model.midi.mapping.nextVisual,
-                    learning: model.midi.learnTarget == .nextVisual) {
-                model.midi.learnTarget = model.midi.learnTarget == .nextVisual
-                    ? nil : .nextVisual
-            } clear: {
-                model.midi.mapping.nextVisual = nil
-            }
+            if model.midi.enabled {
+                midiRow("Previous visual", action: .previousVisual)
+                midiRow("Next visual", action: .nextVisual)
 
-            caption("Connect a MIDI controller and press Learn to assign controls.")
+                caption("Connect a MIDI controller and press Learn to assign "
+                        + "controls. Learning a control that is already mapped "
+                        + "moves it.")
+
+                Divider().background(Color.white.opacity(0.1)).padding(.vertical, 4)
+
+                midiFavouritesView
+
+                Divider().background(Color.white.opacity(0.1)).padding(.vertical, 4)
+
+                HStack {
+                    Text("Listen on Channel")
+                        .font(Velo.label(13))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Spacer()
+                    Picker("", selection: $model.midi.channelFilter) {
+                        Text("All Channels").tag(UInt8?.none)
+                        ForEach(0..<16, id: \.self) { ch in
+                            Text("Channel \(ch + 1)").tag(UInt8?.some(UInt8(ch)))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                    .tint(.white.opacity(0.8))
+                }
+            }
         }
     }
 
-    private func midiRow(_ label: String, trigger: MidiController.MidiTrigger?,
-                         learning: Bool,
-                         learn: @escaping () -> Void,
-                         clear: @escaping () -> Void) -> some View {
+    private var midiFavouritesView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("FAVOURITE SLOTS")
+                .font(Velo.label(10))
+                .tracking(2.0)
+                .foregroundStyle(.white.opacity(0.3))
+
+            ForEach(0..<MidiController.favouriteSlots, id: \.self) { slot in
+                midiFavouriteRow(slot)
+            }
+
+            caption(model.favourites.isEmpty
+                    ? "No favourites saved yet — the slots follow the visual list "
+                      + "in order. Star visuals in the picker (V) to choose them."
+                    : "The same ten slots the number keys reach.")
+        }
+    }
+
+    private func midiFavouriteRow(_ slot: Int) -> some View {
+        // Slot 10 is the "0" key, matching the number row.
+        let keyLabel = slot < 9 ? "\(slot + 1)" : "0"
+        let sceneName = model.sceneForSlot(slot).map { SceneCatalog.names[$0] }
+        return HStack(spacing: 8) {
+            Text(keyLabel)
+                .font(Velo.readout(12))
+                .foregroundStyle(.white.opacity(0.45))
+                .frame(width: 14, alignment: .trailing)
+
+            Text(sceneName ?? "empty")
+                .font(Velo.light(13))
+                .foregroundStyle(.white.opacity(sceneName != nil ? 0.7 : 0.25))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: 118, alignment: .leading)
+
+            midiBinding(for: .favourite(slot), width: 84)
+        }
+    }
+
+    private func midiRow(_ label: String, action: MidiController.Action) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(Velo.label(13))
                 .foregroundStyle(.white.opacity(0.5))
-            HStack(spacing: 8) {
-                Text(trigger?.displayName ?? "—")
-                    .font(Velo.readout(13))
-                    .foregroundStyle(.white.opacity(trigger != nil ? 0.8 : 0.3))
-                    .frame(width: 100, alignment: .leading)
-                Button(learning ? "Waiting…" : "Learn") { learn() }
+            midiBinding(for: action, width: 100)
+        }
+    }
+
+    /// The trigger readout plus its Learn/Clear buttons — the one interactive
+    /// unit every mapping row is built from.
+    private func midiBinding(for action: MidiController.Action,
+                             width: CGFloat) -> some View {
+        let trigger = model.midi.mapping[action]
+        let learning = model.midi.learnTarget == action
+        return HStack(spacing: 8) {
+            Text(trigger?.displayName ?? "—")
+                .font(Velo.readout(13))
+                .foregroundStyle(.white.opacity(trigger != nil ? 0.8 : 0.3))
+                .frame(width: width, alignment: .leading)
+            Button(learning ? "Waiting…" : "Learn") {
+                model.midi.learnTarget = learning ? nil : action
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .opacity(learning ? 1.0 : 0.6)
+            if trigger != nil {
+                Button("Clear") { model.midi.mapping[action] = nil }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .opacity(learning ? 1.0 : 0.6)
-                if trigger != nil {
-                    Button("Clear") { clear() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .opacity(0.5)
-                }
+                    .opacity(0.5)
             }
         }
     }
@@ -737,6 +828,9 @@ private struct FileTransportView: View {
     @State private var displayTime: TimeInterval = 0
 
     var body: some View {
+        // Dummy read so SwiftUI redraws when a new file is loaded over an existing one
+        let _ = model.playbackURL 
+        
         VStack(alignment: .leading, spacing: 12) {
             if let name = model.filePlayer.fileName {
                 Text(name)
@@ -1041,7 +1135,9 @@ private struct VisualPickerPanel: View {
         }
         .padding(24)
         .frame(width: 360)
-        .background(.black.opacity(0.88), in: .rect(cornerRadius: 14))
+        .background(.black.opacity(0.55), in: .rect(cornerRadius: 14))
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 14))
+        .environment(\.colorScheme, .dark)
         .overlay(
             RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.08), lineWidth: 1)
         )
@@ -1163,7 +1259,9 @@ private struct LightingPanel: View {
             .padding(20)
         }
         .frame(width: 340)
-        .background(.black.opacity(0.82), in: .rect(cornerRadius: 14))
+        .background(.black.opacity(0.55), in: .rect(cornerRadius: 14))
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 14))
+        .environment(\.colorScheme, .dark)
         .overlay(
             RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.10), lineWidth: 1)
         )

@@ -206,6 +206,14 @@ final class MetalCanvasNSView: NSView {
     }
     var onSceneChange: ((Int) -> Void)?
     var favourites: [Int] = []
+    
+    var transitionsEnabled: Bool = false {
+        didSet { renderer?.transitionsEnabled = transitionsEnabled }
+    }
+    
+    var transitionDuration: Double = 10.0 {
+        didSet { renderer?.transitionDuration = Float(transitionDuration) }
+    }
 
     // Keys are handled here rather than as SwiftUI `.keyboardShortcut`s. Menu
     // key equivalents are matched before the responder chain ever runs, so a
@@ -286,6 +294,8 @@ final class MetalCanvasNSView: NSView {
         metalLayer.displaySyncEnabled = true
         applyColorConfiguration()
         renderer = Renderer(device: device)
+        renderer?.transitionsEnabled = transitionsEnabled
+        renderer?.transitionDuration = Float(transitionDuration)
     }
 
     private func applyColorConfiguration() {
@@ -518,6 +528,8 @@ struct MetalCanvasView: NSViewRepresentable {
     var sceneIndex: Int
     var onSceneChange: (Int) -> Void
     var favourites: [Int]
+    var transitionsEnabled: Bool
+    var transitionDuration: Double
 
     func makeNSView(context: Context) -> MetalCanvasNSView {
         let view = MetalCanvasNSView(frame: .zero)
@@ -538,6 +550,8 @@ struct MetalCanvasView: NSViewRepresentable {
         view.sceneIndex = sceneIndex
         view.onSceneChange = onSceneChange
         view.favourites = favourites
+        view.transitionsEnabled = transitionsEnabled
+        view.transitionDuration = transitionDuration
         return view
     }
 
@@ -558,5 +572,7 @@ struct MetalCanvasView: NSViewRepresentable {
         nsView.sceneIndex = sceneIndex
         nsView.onSceneChange = onSceneChange
         nsView.favourites = favourites
+        nsView.transitionsEnabled = transitionsEnabled
+        nsView.transitionDuration = transitionDuration
     }
 }

@@ -150,10 +150,25 @@ final class AppModel {
         }
     }
 
+    var dynamicWebColor: Bool = true {
+        didSet {
+            DynamicWebScene.colorEnabled = dynamicWebColor
+            UserDefaults.standard.set(dynamicWebColor, forKey: "velo_dynamic_web_color")
+        }
+    }
+
     static let swarmDensityPresets = [32, 24, 18, 12, 8]
 
     var visualsDisabled: Bool = false {
         didSet { UserDefaults.standard.set(visualsDisabled, forKey: "velo_visuals_off") }
+    }
+
+    var transitionsEnabled: Bool = false {
+        didSet { UserDefaults.standard.set(transitionsEnabled, forKey: "velo_transitions") }
+    }
+
+    var transitionDuration: Double = 10.0 {
+        didSet { UserDefaults.standard.set(transitionDuration, forKey: "velo_transition_duration") }
     }
 
     var favourites: [Int] = [] {
@@ -168,13 +183,24 @@ final class AppModel {
         }
     }
 
+    /// The scene a numbered slot recalls. With favourites saved, the slots are
+    /// the favourites; with none saved they fall through to the catalogue in
+    /// order. Shared by the number keys and the MIDI favourite mappings so both
+    /// always land on the same visual.
+    func sceneForSlot(_ slot: Int) -> Int? {
+        if !favourites.isEmpty {
+            return slot < favourites.count ? favourites[slot] : nil
+        }
+        return slot < SceneCatalog.names.count ? slot : nil
+    }
+
     let audio = AudioEngine()
     let tone = ToneGenerator()
     let filePlayer = FilePlayer()
     let hue = HueState()
     let lifx = LifxState()
     let nanoleaf = NanoleafState()
-    let midi = MidiController()
+    var midi = MidiController()
 
     /// Test-tone mode. Not persisted — always starts on mic.
     var toneActive: Bool = false {
@@ -189,23 +215,28 @@ final class AppModel {
     }
 
     var playbackURL: URL?
-    var playbackActive: Bool { filePlayer.isPlaying }
-    var playbackPaused: Bool { filePlayer.isPaused }
+    var playbackActive: Bool = false
+    var playbackPaused: Bool = false
 
     func startFilePlayback(url: URL) {
         if toneActive { toneActive = false }
         playbackURL = url
         filePlayer.play(url: url, audioEngine: audio)
+        playbackActive = filePlayer.isPlaying
+        playbackPaused = filePlayer.isPaused
     }
 
     func stopFilePlayback() {
         guard filePlayer.isPlaying else { return }
         filePlayer.stop()
         playbackURL = nil
+        playbackActive = false
+        playbackPaused = false
     }
 
     func toggleFilePlayPause() {
         filePlayer.togglePlayPause()
+        playbackPaused = filePlayer.isPaused
     }
 
     func seekFile(to time: TimeInterval) {
@@ -290,11 +321,23 @@ final class AppModel {
         }
 
         self.visualsDisabled = UserDefaults.standard.bool(forKey: "velo_visuals_off")
+        
+        self.transitionsEnabled = UserDefaults.standard.bool(forKey: "velo_transitions")
+        let savedDuration = UserDefaults.standard.double(forKey: "velo_transition_duration")
+        if savedDuration > 0 {
+            self.transitionDuration = savedDuration
+        }
 
         let grid = UserDefaults.standard.integer(forKey: "velo_swarm_grid")
         if grid >= 6 && grid <= 32 {
             self.crystalSwarmGrid = grid
             CrystalSwarmScene.gridSize = grid
+        }
+
+        if UserDefaults.standard.object(forKey: "velo_dynamic_web_color") != nil {
+            let webCol = UserDefaults.standard.bool(forKey: "velo_dynamic_web_color")
+            self.dynamicWebColor = webCol
+            DynamicWebScene.colorEnabled = webCol
         }
 
         let maxScene = SceneCatalog.names.count
@@ -307,6 +350,12 @@ final class AppModel {
         VeloLog.begin()
         audio.start()
 
+        filePlayer.onPlaybackStateChange = { [weak self] in
+            guard let self else { return }
+            self.playbackActive = self.filePlayer.isPlaying
+            self.playbackPaused = self.filePlayer.isPaused
+        }
+
         midi.onAction = { [weak self] action in
             guard let self else { return }
             let count = SceneCatalog.names.count
@@ -315,6 +364,8 @@ final class AppModel {
                 sceneIndex = ((sceneIndex - 1) % count + count) % count
             case .nextVisual:
                 sceneIndex = (sceneIndex + 1) % count
+            case .favourite(let slot):
+                if let target = sceneForSlot(slot) { sceneIndex = target }
             }
         }
     }

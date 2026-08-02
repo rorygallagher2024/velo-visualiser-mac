@@ -1,5 +1,5 @@
 import Foundation
-import Metal
+@preconcurrency import Metal
 import QuartzCore
 import simd
 
@@ -14,6 +14,7 @@ struct Uniforms {
     var tintR: Float = 1
     var tintG: Float = 1
     var tintB: Float = 1
+    var mixAlpha: Float = 1
 }
 
 /// The Metal 4 renderer.
@@ -72,7 +73,16 @@ final class Renderer: @unchecked Sendable {
     private var library: MTLLibrary?
     private var pixelFormat: MTLPixelFormat = .bgra8Unorm
     private var blitPipeline: MTLRenderPipelineState?
+    private var mixPipeline: MTLRenderPipelineState?
     private var lastOffscreenInResidency: MTLTexture?
+
+    var transitionsEnabled: Bool = false
+    var transitionDuration: Float = 10.0
+    private var transitionStartTime: Float = -1
+    private var transitioningFromScene: Int? = nil
+    private var oldPipeline: MTLRenderPipelineState?
+    private var oldPixelFormat: MTLPixelFormat?
+    private var transitionTexture: MTLTexture?
 
     /// Metal 4 makes residency the app's job. A buffer that is not in a
     /// residency set attached to the queue reads as zeros on the GPU, with no
@@ -83,6 +93,7 @@ final class Renderer: @unchecked Sendable {
 
     private var uniformBuffers: [MTLBuffer] = []
     private var bandBuffers: [MTLBuffer] = []
+    private var oldBandBuffers: [MTLBuffer] = []
     private let frameSemaphore = DispatchSemaphore(value: maxFramesInFlight)
     private var frameIndex = 0
     private var lastTime: Float = -1
@@ -137,10 +148,13 @@ final class Renderer: @unchecked Sendable {
             guard let u = device.makeBuffer(
                     length: MemoryLayout<Uniforms>.stride, options: .storageModeShared),
                   let b = device.makeBuffer(
+                    length: SceneCatalog.sceneBufferBytes, options: .storageModeShared),
+                  let ob = device.makeBuffer(
                     length: SceneCatalog.sceneBufferBytes, options: .storageModeShared)
             else { return nil }
             uniformBuffers.append(u)
             bandBuffers.append(b)
+            oldBandBuffers.append(ob)
         }
 
         syphon = SyphonOutput(device: device)
@@ -151,6 +165,7 @@ final class Renderer: @unchecked Sendable {
         if let set = try? device.makeResidencySet(descriptor: MTLResidencySetDescriptor()) {
             uniformBuffers.forEach { set.addAllocation($0) }
             bandBuffers.forEach { set.addAllocation($0) }
+            oldBandBuffers.forEach { set.addAllocation($0) }
             scenes.compactMap(\.historyBuffer).forEach { set.addAllocation($0) }
             set.commit()
             set.requestResidency()
@@ -159,7 +174,56 @@ final class Renderer: @unchecked Sendable {
         }
 
         guard buildPipeline(for: .bgra8Unorm) else { return nil }
-        blitPipeline = Self.makeBlitPipeline(device: device, compiler: compiler, format: .bgra8Unorm)
+    }
+
+    private static func makeMixPipeline(
+        device: MTLDevice, compiler: MTL4Compiler, format: MTLPixelFormat
+    ) -> MTLRenderPipelineState? {
+        let src = """
+        #include <metal_stdlib>
+        using namespace metal;
+        struct V { float4 pos [[position]]; float2 uv; };
+        vertex V mixVert(uint vid [[vertex_id]]) {
+            float2 p = float2((vid << 1) & 2, vid & 2);
+            V o; o.pos = float4(p * 2.0 - 1.0, 0, 1);
+            o.uv = float2(p.x, 1.0 - p.y);
+            return o;
+        }
+        struct MixUniforms {
+            float2 resolution;
+            float time;
+            float dim;
+            float hueShift;
+            float saturation;
+            float tintR;
+            float tintG;
+            float tintB;
+            float mixAlpha;
+        };
+        fragment float4 mixFrag(V in [[stage_in]],
+                                texture2d<float> tex [[texture(1)]],
+                                constant MixUniforms &u [[buffer(0)]]) {
+            constexpr sampler s(filter::linear);
+            float4 color = tex.sample(s, in.uv);
+            return float4(color.rgb * u.mixAlpha, u.mixAlpha);
+        }
+        """
+        guard let lib = try? device.makeLibrary(source: src, options: nil) else { return nil }
+        let vd = MTL4LibraryFunctionDescriptor(); vd.name = "mixVert"; vd.library = lib
+        let fd = MTL4LibraryFunctionDescriptor(); fd.name = "mixFrag"; fd.library = lib
+        let desc = MTL4RenderPipelineDescriptor()
+        desc.vertexFunctionDescriptor = vd
+        desc.fragmentFunctionDescriptor = fd
+        let att = desc.colorAttachments[0]
+        att?.pixelFormat = format
+        att?.blendingState = .enabled
+        att?.sourceRGBBlendFactor = .one
+        att?.destinationRGBBlendFactor = .oneMinusSourceAlpha
+        att?.rgbBlendOperation = .add
+        att?.sourceAlphaBlendFactor = .one
+        att?.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        att?.alphaBlendOperation = .add
+        return try? compiler.makeRenderPipelineState(descriptor: desc)
     }
 
     /// A minimal render pipeline that samples a texture onto a fullscreen
@@ -217,12 +281,23 @@ final class Renderer: @unchecked Sendable {
     }
 
     /// Apply a requested scene change. Render thread only.
-    private func applyPendingScene() {
+    private func applyPendingScene(time: Float) {
         sceneLock.lock()
         let target = pendingScene
         pendingScene = nil
         sceneLock.unlock()
         guard let target, target != sceneIndexStorage else { return }
+
+        if transitionsEnabled && pipeline != nil {
+            transitioningFromScene = sceneIndexStorage
+            oldPipeline = pipeline
+            oldPixelFormat = pixelFormat
+            transitionStartTime = time
+        } else {
+            transitioningFromScene = nil
+            oldPipeline = nil
+            transitionTexture = nil
+        }
 
         // Build first, swap second. A failed compile leaves the current scene
         // running rather than presenting a black canvas.
@@ -233,6 +308,8 @@ final class Renderer: @unchecked Sendable {
             sceneLock.lock(); sceneIndexStorage = previous; sceneLock.unlock()
             library = nil
             _ = buildPipeline(for: pixelFormat, force: true)
+            transitioningFromScene = nil
+            oldPipeline = nil
         }
     }
 
@@ -244,6 +321,10 @@ final class Renderer: @unchecked Sendable {
     @discardableResult
     func buildPipeline(for format: MTLPixelFormat, force: Bool = false) -> Bool {
         if !force, pixelFormat == format, pipeline != nil { return true }
+        if mixPipeline == nil || pixelFormat != format {
+            mixPipeline = Self.makeMixPipeline(device: device, compiler: compiler, format: format)
+            blitPipeline = Self.makeBlitPipeline(device: device, compiler: compiler, format: format)
+        }
         if library == nil {
             do {
                 library = try device.makeLibrary(
@@ -299,7 +380,7 @@ final class Renderer: @unchecked Sendable {
     /// same encode path as `render`, minus the drawable and the pacing.
     @discardableResult
     func renderOffscreen(into target: MTLTexture, audio: AudioEngine, time: Float) -> Double {
-        applyPendingScene()
+        applyPendingScene(time: time)
         guard buildPipeline(for: target.pixelFormat), let pipeline else { return 0 }
         let slot = frameIndex % Self.maxFramesInFlight
         frameIndex &+= 1
@@ -361,7 +442,7 @@ final class Renderer: @unchecked Sendable {
     }
 
     func render(layer: CAMetalLayer, audio: AudioEngine, time: Float) {
-        applyPendingScene()
+        applyPendingScene(time: time)
         guard let pipeline else { return }
 
         // ORDER MATTERS. Throttle on our own resources first, then ask for a
@@ -392,8 +473,25 @@ final class Renderer: @unchecked Sendable {
         lastTime = time
         beatBus.update(audio: audio, dt: dt, time: time)
         BeatBus.current = beatBus
+        
+        let transitionProgress: Float
+        if transitioningFromScene != nil, transitionStartTime > 0, oldPipeline != nil {
+            transitionProgress = min(max((time - transitionStartTime) / transitionDuration, 0.0), 1.0)
+            if transitionProgress >= 1.0 {
+                transitioningFromScene = nil
+                oldPipeline = nil
+                transitionTexture = nil
+            }
+        } else {
+            transitionProgress = 1.0
+        }
+
         let scene = scenes[sceneIndex]
         scene.update(audio: audio, dt: dt)
+        
+        if transitionProgress < 1.0, let oldIndex = transitioningFromScene {
+            scenes[oldIndex].update(audio: audio, dt: dt)
+        }
 
         // When Syphon is active, render to a fixed-size offscreen texture
         // (default 3840x2160) and blit to the drawable. This eliminates
@@ -420,6 +518,20 @@ final class Renderer: @unchecked Sendable {
             syphonTexture = nil
         }
 
+        if transitionProgress < 1.0 {
+            if transitionTexture?.width != renderTarget.width || transitionTexture?.height != renderTarget.height {
+                let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: renderTarget.pixelFormat, width: renderTarget.width, height: renderTarget.height, mipmapped: false)
+                desc.usage = [.renderTarget, .shaderRead]
+                desc.storageMode = .private
+                transitionTexture = device.makeTexture(descriptor: desc)
+                if let t = transitionTexture {
+                    residencySet?.addAllocation(t)
+                    residencySet?.commit()
+                    residencySet?.requestResidency()
+                }
+            }
+        }
+
         let theme = ThemePreset.current.grade
         var uniforms = Uniforms(
             resolution: SIMD2(Float(renderTarget.width), Float(renderTarget.height)),
@@ -429,38 +541,105 @@ final class Renderer: @unchecked Sendable {
             saturation: theme.saturation,
             tintR: theme.tintR,
             tintG: theme.tintG,
-            tintB: theme.tintB
+            tintB: theme.tintB,
+            mixAlpha: transitionProgress
         )
         uniformBuffers[slot].contents()
             .copyMemory(from: &uniforms, byteCount: MemoryLayout<Uniforms>.stride)
 
         scene.writeData(into: bandBuffers[slot].contents())
+        if transitionProgress < 1.0, let oldIndex = transitioningFromScene {
+            scenes[oldIndex].writeData(into: oldBandBuffers[slot].contents())
+        }
 
         let allocator = allocators[slot]
         let commandBuffer = commandBuffers[slot]
         allocator.reset()
         commandBuffer.beginCommandBuffer(allocator: allocator)
 
-        // 1) Scene render pass — into offscreen (Syphon) or drawable.
-        let pass = MTL4RenderPassDescriptor()
-        pass.colorAttachments[0].texture = renderTarget
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        if transitionProgress < 1.0, let oldIndex = transitioningFromScene, let oldPSO = oldPipeline, let tTex = transitionTexture {
+            let oldScene = scenes[oldIndex]
+            
+            // Render old scene to renderTarget
+            let oldPass = MTL4RenderPassDescriptor()
+            oldPass.colorAttachments[0].texture = renderTarget
+            oldPass.colorAttachments[0].loadAction = .clear
+            oldPass.colorAttachments[0].storeAction = .store
+            oldPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
-        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
-            encoder.setRenderPipelineState(pipeline)
-            argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-            argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
-            if let history = scene.historyBuffer {
-                argumentTable.setAddress(history.gpuAddress, index: 2)
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: oldPass) {
+                encoder.setRenderPipelineState(oldPSO)
+                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                argumentTable.setAddress(oldBandBuffers[slot].gpuAddress, index: 1)
+                if let history = oldScene.historyBuffer {
+                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                }
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                let draw = oldScene.draw
+                encoder.drawPrimitives(
+                    primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
+                encoder.endEncoding()
             }
-            encoder.setArgumentTable(argumentTable, stages: .fragment)
-            encoder.setArgumentTable(argumentTable, stages: .vertex)
-            let draw = scene.draw
-            encoder.drawPrimitives(
-                primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
-            encoder.endEncoding()
+            
+            // Render new scene to transitionTexture
+            let newPass = MTL4RenderPassDescriptor()
+            newPass.colorAttachments[0].texture = tTex
+            newPass.colorAttachments[0].loadAction = .clear
+            newPass.colorAttachments[0].storeAction = .store
+            newPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: newPass) {
+                encoder.setRenderPipelineState(pipeline)
+                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+                if let history = scene.historyBuffer {
+                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                }
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                let draw = scene.draw
+                encoder.drawPrimitives(
+                    primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
+                encoder.endEncoding()
+            }
+            
+            // Mix transitionTexture over renderTarget
+            let mixPass = MTL4RenderPassDescriptor()
+            mixPass.colorAttachments[0].texture = renderTarget
+            mixPass.colorAttachments[0].loadAction = .load
+            mixPass.colorAttachments[0].storeAction = .store
+            
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: mixPass), let mixPSO = mixPipeline {
+                encoder.setRenderPipelineState(mixPSO)
+                argumentTable.setTexture(tTex.gpuResourceID, index: 1)
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.drawPrimitives(
+                    primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
+                encoder.endEncoding()
+            }
+        } else {
+            // Normal render
+            let pass = MTL4RenderPassDescriptor()
+            pass.colorAttachments[0].texture = renderTarget
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].storeAction = .store
+            pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+                encoder.setRenderPipelineState(pipeline)
+                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+                if let history = scene.historyBuffer {
+                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                }
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                let draw = scene.draw
+                encoder.drawPrimitives(
+                    primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
+                encoder.endEncoding()
+            }
         }
 
         // 2) If we rendered offscreen, scale-blit into the drawable via a
@@ -481,31 +660,23 @@ final class Renderer: @unchecked Sendable {
             }
         }
 
-        // 3) Signal the Syphon event so the blit queue knows the render
-        //    is done before it reads the offscreen texture.
-        var syphonEventVal: UInt64 = 0
-        if syphonTexture != nil, let sy = syphon {
-            syphonEventVal = sy.nextEventValue
-            (commandBuffer as? MTLCommandBuffer)?
-                .encodeSignalEvent(sy.currentEvent, value: syphonEventVal)
-        }
-
         commandBuffer.endCommandBuffer()
 
         let options = MTL4CommitOptions()
-        let semaphore = frameSemaphore
         let stats = stats
-        options.addFeedbackHandler { feedback in
+        let semaphore = frameSemaphore
+        let syphonTexWrapper = SendableTexture(texture: syphonTexture)
+        let syphonInst = syphon
+        options.addFeedbackHandler { [syphonTexWrapper, syphonInst] feedback in
             stats.recordGPU(feedback.gpuEndTime - feedback.gpuStartTime)
+            if let tex = syphonTexWrapper.texture {
+                syphonInst?.publish(texture: tex)
+            }
             semaphore.signal()
         }
 
         queue.waitForDrawable(drawable)
         queue.commit([commandBuffer], options: options)
-
-        if let syphonTex = syphonTexture {
-            syphon?.publish(texture: syphonTex, afterEvent: syphonEventVal)
-        }
 
         queue.signalDrawable(drawable)
         drawable.present()
@@ -519,7 +690,7 @@ final class Renderer: @unchecked Sendable {
     /// and publishes to Syphon clients. No drawable is acquired or presented,
     /// so the window can show a control panel instead of the canvas.
     func renderSyphonOnly(audio: AudioEngine, time: Float) {
-        applyPendingScene()
+        applyPendingScene(time: time)
         guard buildPipeline(for: .bgra8Unorm), let pipeline else { return }
         guard let syphon, syphon.isRunning,
               let offscreen = syphon.ensureOffscreen(
@@ -541,62 +712,157 @@ final class Renderer: @unchecked Sendable {
         let dt = lastTime < 0 ? 1.0 / 60.0 : min(max(time - lastTime, 0), 0.1)
         lastTime = time
         beatBus.update(audio: audio, dt: dt, time: time)
-        BeatBus.current = beatBus
+        let transitionProgress: Float
+        if transitioningFromScene != nil, transitionStartTime > 0, oldPipeline != nil {
+            transitionProgress = min(max((time - transitionStartTime) / transitionDuration, 0.0), 1.0)
+            if transitionProgress >= 1.0 {
+                transitioningFromScene = nil
+                oldPipeline = nil
+                transitionTexture = nil
+            }
+        } else {
+            transitionProgress = 1.0
+        }
+
         let scene = scenes[sceneIndex]
         scene.update(audio: audio, dt: dt)
+        
+        if transitionProgress < 1.0, let oldIndex = transitioningFromScene {
+            scenes[oldIndex].update(audio: audio, dt: dt)
+        }
+
+        if transitionProgress < 1.0 {
+            if transitionTexture?.width != offscreen.width || transitionTexture?.height != offscreen.height {
+                let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: offscreen.pixelFormat, width: offscreen.width, height: offscreen.height, mipmapped: false)
+                desc.usage = [.renderTarget, .shaderRead]
+                desc.storageMode = .private
+                transitionTexture = device.makeTexture(descriptor: desc)
+                if let t = transitionTexture {
+                    residencySet?.addAllocation(t)
+                    residencySet?.commit()
+                    residencySet?.requestResidency()
+                }
+            }
+        }
 
         let theme = ThemePreset.current.grade
         var uniforms = Uniforms(
             resolution: SIMD2(Float(offscreen.width), Float(offscreen.height)),
             time: time, dim: 1,
             hueShift: theme.hueShift, saturation: theme.saturation,
-            tintR: theme.tintR, tintG: theme.tintG, tintB: theme.tintB)
+            tintR: theme.tintR, tintG: theme.tintG, tintB: theme.tintB,
+            mixAlpha: transitionProgress)
         uniformBuffers[slot].contents()
             .copyMemory(from: &uniforms, byteCount: MemoryLayout<Uniforms>.stride)
+            
         scene.writeData(into: bandBuffers[slot].contents())
+        if transitionProgress < 1.0, let oldIndex = transitioningFromScene {
+            scenes[oldIndex].writeData(into: oldBandBuffers[slot].contents())
+        }
 
         let allocator = allocators[slot]
         let commandBuffer = commandBuffers[slot]
         allocator.reset()
         commandBuffer.beginCommandBuffer(allocator: allocator)
 
-        let pass = MTL4RenderPassDescriptor()
-        pass.colorAttachments[0].texture = offscreen
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        if transitionProgress < 1.0, let oldIndex = transitioningFromScene, let oldPSO = oldPipeline, let tTex = transitionTexture {
+            let oldScene = scenes[oldIndex]
+            
+            // Render old scene
+            let oldPass = MTL4RenderPassDescriptor()
+            oldPass.colorAttachments[0].texture = offscreen
+            oldPass.colorAttachments[0].loadAction = .clear
+            oldPass.colorAttachments[0].storeAction = .store
+            oldPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
-        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
-            encoder.setRenderPipelineState(pipeline)
-            argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-            argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
-            if let history = scene.historyBuffer {
-                argumentTable.setAddress(history.gpuAddress, index: 2)
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: oldPass) {
+                encoder.setRenderPipelineState(oldPSO)
+                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                argumentTable.setAddress(oldBandBuffers[slot].gpuAddress, index: 1)
+                if let history = oldScene.historyBuffer {
+                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                }
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                let draw = oldScene.draw
+                encoder.drawPrimitives(
+                    primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
+                encoder.endEncoding()
             }
-            encoder.setArgumentTable(argumentTable, stages: .fragment)
-            encoder.setArgumentTable(argumentTable, stages: .vertex)
-            let draw = scene.draw
-            encoder.drawPrimitives(
-                primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
-            encoder.endEncoding()
-        }
+            
+            // Render new scene
+            let newPass = MTL4RenderPassDescriptor()
+            newPass.colorAttachments[0].texture = tTex
+            newPass.colorAttachments[0].loadAction = .clear
+            newPass.colorAttachments[0].storeAction = .store
+            newPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
 
-        let eventVal = syphon.nextEventValue
-        (commandBuffer as? MTLCommandBuffer)?
-            .encodeSignalEvent(syphon.currentEvent, value: eventVal)
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: newPass) {
+                encoder.setRenderPipelineState(pipeline)
+                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+                if let history = scene.historyBuffer {
+                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                }
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                let draw = scene.draw
+                encoder.drawPrimitives(
+                    primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
+                encoder.endEncoding()
+            }
+            
+            // Mix
+            let mixPass = MTL4RenderPassDescriptor()
+            mixPass.colorAttachments[0].texture = offscreen
+            mixPass.colorAttachments[0].loadAction = .load
+            mixPass.colorAttachments[0].storeAction = .store
+            
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: mixPass), let mixPSO = mixPipeline {
+                encoder.setRenderPipelineState(mixPSO)
+                argumentTable.setTexture(tTex.gpuResourceID, index: 1)
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.drawPrimitives(
+                    primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
+                encoder.endEncoding()
+            }
+        } else {
+            let pass = MTL4RenderPassDescriptor()
+            pass.colorAttachments[0].texture = offscreen
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].storeAction = .store
+            pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+                encoder.setRenderPipelineState(pipeline)
+                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+                if let history = scene.historyBuffer {
+                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                }
+                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                let draw = scene.draw
+                encoder.drawPrimitives(
+                    primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
+                encoder.endEncoding()
+            }
+        }
 
         commandBuffer.endCommandBuffer()
 
         let options = MTL4CommitOptions()
-        let semaphore = frameSemaphore
         let stats = stats
-        options.addFeedbackHandler { feedback in
+        let semaphore = frameSemaphore
+        let offscreenWrapper = SendableTexture(texture: offscreen)
+        options.addFeedbackHandler { [syphon, offscreenWrapper] feedback in
             stats.recordGPU(feedback.gpuEndTime - feedback.gpuStartTime)
+            if let tex = offscreenWrapper.texture {
+                syphon.publish(texture: tex)
+            }
             semaphore.signal()
         }
         queue.commit([commandBuffer], options: options)
-
-        syphon.publish(texture: offscreen, afterEvent: eventVal)
 
         stats.recordFrame(
             encode: CACurrentMediaTime() - encodeStart,
@@ -735,4 +1001,8 @@ final class FrameStats: @unchecked Sendable {
         fflush(stdout)
         }
     }
+}
+
+private struct SendableTexture: @unchecked Sendable {
+    let texture: MTLTexture?
 }

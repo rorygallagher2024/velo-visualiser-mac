@@ -199,12 +199,18 @@ final class SpectralCanyonScene: VeloScene {
             return c;
         }
 
+        // Soft knee: values below 0.5 pass through unchanged (mic),
+        // higher values compress so colour stays in the ramp.
+        static inline float knee(float x) {
+            return x < 0.5 ? x : 0.5 + (x - 0.5) / (1.0 + (x - 0.5) * 2.0);
+        }
+
         fragment float4 veloFragment(VSOut in [[stage_in]],
                                      constant Uniforms &u [[buffer(0)]],
                                      constant Canyon &s [[buffer(1)]])
         {
-            float mag = in.height;
-            float peak = in.peak;
+            float mag = knee(in.height);
+            float peak = knee(in.peak);
             float fx = in.fx;
             float zt = in.zt;
 

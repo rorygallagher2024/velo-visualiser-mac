@@ -18,10 +18,19 @@ final class PhosphorScopeScene: VeloScene {
 
     static let pointCount = 1024
 
+    private static let shaderSensitivity: Double = 5.0
+    private static let agcTarget: Float = 0.65
+    private static let agcFloor: Float = 0.85
+    private static let agcCeil: Float = 3.0
+    private static let agcAttack: Float = 0.3
+    private static let agcRelease: Float = 0.015
+    private static let agcNoiseFloor: Float = 0.001
+
     let name = "Phosphor Scope"
 
     private var samples = [Float](repeating: 0, count: PhosphorScopeScene.pointCount)
     private var low: Float = 0
+    private var smoothGain: Float = 0.85
     private var energy = BandEnergy()
 
     func update(audio: AudioEngine, dt: Float) {
@@ -30,6 +39,17 @@ final class PhosphorScopeScene: VeloScene {
         }
         energy.update(bands: audio.currentBands(), dt: dt)
         low += (energy.low - low) * min(10 * dt, 1)
+
+        // AGC ported from Android OscilloscopeScene: track the peak of the raw
+        // PCM, compute the gain needed to bring the post-softclip amplitude to
+        // the target, and ease toward it with asymmetric attack/release.
+        var peak: Float = 0
+        for s in samples { peak = max(peak, abs(s)) }
+        peak = max(peak, Self.agcNoiseFloor)
+        let postClip = Float(tanh(Double(peak) * Self.shaderSensitivity))
+        let desired = min(max(Self.agcTarget / postClip, Self.agcFloor), Self.agcCeil)
+        let alpha = desired < smoothGain ? Self.agcAttack : Self.agcRelease
+        smoothGain += alpha * (desired - smoothGain)
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
@@ -37,9 +57,9 @@ final class PhosphorScopeScene: VeloScene {
         samples.withUnsafeBufferPointer {
             pointer.copyMemory(from: $0.baseAddress!, byteCount: bytes)
         }
-        var packed = low
+        var packed = SIMD2<Float>(low, smoothGain)
         pointer.advanced(by: bytes)
-            .copyMemory(from: &packed, byteCount: MemoryLayout<Float>.stride)
+            .copyMemory(from: &packed, byteCount: MemoryLayout<SIMD2<Float>>.size)
     }
 
     var shaderSource: String {
@@ -48,11 +68,9 @@ final class PhosphorScopeScene: VeloScene {
 
         constant int POINTS = \(Self.pointCount);
         constant float N = float(\(Self.pointCount));
-        // An unprocessed microphone is quiet for speech: lift hard, then limit.
         constant float SENSITIVITY = 5.0;
-        constant float GAIN = 0.9;
 
-        struct Trace { float sample[\(Self.pointCount)]; float low; };
+        struct Trace { float sample[\(Self.pointCount)]; float low; float gain; };
 
         \(Self.fullscreenVertexShader)
 
@@ -66,7 +84,7 @@ final class PhosphorScopeScene: VeloScene {
 
         static inline float2 samplePx(constant Trace &t, int i, float xShift, float2 res) {
             float x = (float(i) / (N - 1.0)) * res.x + xShift;
-            float y = (0.5 + 0.5 * sampleY(t, i) * GAIN) * res.y;
+            float y = (0.5 + 0.5 * sampleY(t, i) * t.gain) * res.y;
             return float2(x, y);
         }
 

@@ -34,9 +34,9 @@ final class SpectrogramScene: VeloScene {
         // the GPU reads. The GPU may be reading an older frame while that
         // happens, so at worst one column of one frame is half updated, which
         // is one column out of 640 and invisible.
-        history = device.makeBuffer(
-            length: Self.cols * Self.bins * MemoryLayout<Float>.stride,
-            options: .storageModeShared)
+        let bytes = Self.cols * Self.bins * MemoryLayout<Float>.stride
+        history = device.makeBuffer(length: bytes, options: .storageModeShared)
+        if let history { memset(history.contents(), 0, bytes) }
     }
 
     func update(audio: AudioEngine, dt: Float) {
@@ -106,7 +106,7 @@ final class SpectrogramScene: VeloScene {
             float2 uv = float2(in.position.x, u.resolution.y - in.position.y) / u.resolution;
 
             // Newest column on the right, scrolling left over time.
-            float col = (s.write - 1.0) - (1.0 - uv.x) * (s.cols - 1.0);
+            float col = s.write - (1.0 - uv.x) * (s.cols - 1.0);
             // Discrete columns, never blended. The newest column sits beside
             // the oldest across the ring seam, and interpolating there would
             // smear five seconds ago into now. It also keeps the time axis an

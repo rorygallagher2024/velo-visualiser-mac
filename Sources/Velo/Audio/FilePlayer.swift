@@ -16,9 +16,15 @@ final class FilePlayer: @unchecked Sendable {
     private weak var audioEngine: AudioEngine?
 
     private(set) var file: AVAudioFile?
-    private(set) var isPlaying = false
-    private(set) var isPaused = false
+    private(set) var isPlaying = false {
+        didSet { if isPlaying != oldValue { DispatchQueue.main.async { self.onPlaybackStateChange?() } } }
+    }
+    private(set) var isPaused = false {
+        didSet { if isPaused != oldValue { DispatchQueue.main.async { self.onPlaybackStateChange?() } } }
+    }
     nonisolated(unsafe) var looping = false
+
+    var onPlaybackStateChange: (() -> Void)?
 
     private var leftSamples: [Float] = []
     private var rightSamples: [Float] = []

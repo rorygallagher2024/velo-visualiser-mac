@@ -21,22 +21,34 @@ final class RawOscilloscopeScene: VeloScene {
     let name = "Raw Oscilloscope"
 
     private var samples = [Float](repeating: 0, count: RawOscilloscopeScene.pointCount)
+    private var smoothGain: Float = 2.5
 
     func update(audio: AudioEngine, dt: Float) {
-        // Deliberately unsmoothed: this scene's whole point is that nothing sits
-        // between the converter and the line.
         samples.withUnsafeMutableBufferPointer { buffer in
             audio.fillWaveform(buffer.baseAddress!, count: buffer.count)
         }
+
+        // Auto-range: scale the display so the trace fits the screen.
+        // The signal shape is unmodified — this is just the V/div knob.
+        var peak: Float = 0
+        for s in samples { peak = max(peak, abs(s)) }
+        peak = max(peak, 0.001)
+        let desired = min(max(0.85 / peak, 0.5), 2.5)
+        let alpha: Float = desired < smoothGain ? 0.3 : 0.02
+        smoothGain += alpha * (desired - smoothGain)
     }
 
     func writeData(into pointer: UnsafeMutableRawPointer) {
+        let bytes = Self.pointCount * MemoryLayout<Float>.stride
         samples.withUnsafeBufferPointer {
             pointer.copyMemory(
                 from: $0.baseAddress!,
-                byteCount: $0.count * MemoryLayout<Float>.stride
+                byteCount: bytes
             )
         }
+        var g = smoothGain
+        pointer.advanced(by: bytes)
+            .copyMemory(from: &g, byteCount: MemoryLayout<Float>.stride)
     }
 
     var shaderSource: String {
@@ -45,7 +57,7 @@ final class RawOscilloscopeScene: VeloScene {
 
         constant int POINTS = \(Self.pointCount);
 
-        struct Trace { float sample[\(Self.pointCount)]; };
+        struct Trace { float sample[\(Self.pointCount)]; float gain; };
 
         \(Self.fullscreenVertexShader)
 
@@ -61,9 +73,6 @@ final class RawOscilloscopeScene: VeloScene {
                                      constant Uniforms &u [[buffer(0)]],
                                      constant Trace &t [[buffer(1)]])
         {
-            // Flat linear gain, as on Android: no compression, no clipping, so a
-            // hot signal genuinely runs off the top rather than being flattered.
-            constexpr float GAIN = 2.5;
             constexpr float HALF_WIDTH = 1.1;   // trace half-thickness, in pixels
             constexpr float AA = 1.0;
 
@@ -71,7 +80,7 @@ final class RawOscilloscopeScene: VeloScene {
             float2 p = float2(in.position.x, u.resolution.y - in.position.y);
 
             float mid = u.resolution.y * 0.5;
-            float amp = u.resolution.y * 0.5 * GAIN;
+            float amp = u.resolution.y * 0.5 * t.gain;
             float pxPerSample = u.resolution.x / float(POINTS - 1);
 
             // Only the segments that could possibly be nearest this pixel. The

@@ -116,17 +116,20 @@ final class ParticleDustScene: VeloScene {
                     float audioPulse = 0.0;
                     
                     if (bandAffinity < 0.33) {
-                        // Bass particle: deep red / warm orange
+                        // Bass particle zone
                         audioPulse = lowE;
-                        particleColor = mix(float3(1.0, 0.1, 0.1), float3(1.0, 0.5, 0.0), hash12(cellId));
+                        float3 targetColor = mix(float3(1.0, 0.1, 0.1), float3(1.0, 0.5, 0.0), hash12(cellId));
+                        particleColor = mix(float3(0.8), targetColor, smoothstep(0.2, 0.7, lowE));
                     } else if (bandAffinity < 0.66) {
-                        // Mid particle: cyan / green
+                        // Mid particle zone
                         audioPulse = midE;
-                        particleColor = mix(float3(0.1, 1.0, 0.8), float3(0.1, 1.0, 0.2), hash12(cellId));
+                        float3 targetColor = mix(float3(0.1, 1.0, 0.8), float3(0.1, 1.0, 0.2), hash12(cellId));
+                        particleColor = mix(float3(0.8), targetColor, smoothstep(0.2, 0.7, midE));
                     } else {
-                        // Treble particle: blue / magenta
+                        // Treble particle zone
                         audioPulse = highE;
-                        particleColor = mix(float3(0.2, 0.4, 1.0), float3(1.0, 0.2, 1.0), hash12(cellId));
+                        float3 targetColor = mix(float3(0.2, 0.4, 1.0), float3(1.0, 0.2, 1.0), hash12(cellId));
+                        particleColor = mix(float3(0.8), targetColor, smoothstep(0.2, 0.7, highE));
                     }
                     
                     // Calculate distance to the particle
@@ -136,10 +139,9 @@ final class ParticleDustScene: VeloScene {
                     // Audio pulse expands the radius and incorporates a twinkling phase
                     audioPulse *= (sin(u.time * 10.0 + randomPhase) * 0.5 + 0.5);
                     
-                    // Soft Gaussian-like dot.
-                    // The base radius is negative, meaning many dots are completely invisible when idle.
-                    // As their dedicated audio band energy increases, they smoothly grow into existence.
-                    float rawRadius = -0.04 + randomSize * 0.07 + audioPulse * 0.12;
+                    // Soft Gaussian-like dot. 
+                    // Made smaller and more subtle per user request.
+                    float rawRadius = -0.02 + randomSize * 0.03 + audioPulse * 0.05;
                     
                     float brightness = 0.0;
                     if (rawRadius > 0.0) {

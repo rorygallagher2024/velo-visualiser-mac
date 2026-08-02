@@ -83,7 +83,9 @@ final class TopographicRidgeScene: VeloScene {
             int b0 = clamp(int(bx), 0, BINS - 1);
             int b1 = min(b0 + 1, BINS - 1);
             float fb = bx - float(b0);
-            return mix(s.spec[b0], s.spec[b1], fb);
+            float v = mix(s.spec[b0], s.spec[b1], fb);
+            // Soft knee: mic range (<0.5) untouched, louder values compress.
+            return v < 0.5 ? v : 0.5 + (v - 0.5) / (1.0 + (v - 0.5) * 2.0);
         }
 
         static inline float3 palette(float t) {
@@ -161,20 +163,16 @@ final class TopographicRidgeScene: VeloScene {
             float lineV = 1.0 - smoothstep(0.0, dwv * lineW, min(gv, 1.0 - gv));
             float wire = max(lineU, lineV);
 
+            // Android colours: palette * brightness * fade * HDR lift.
             float3 col = palette(0.55 - h * 0.4);
             col *= (0.8 + h * 1.4);
             col *= fade;
             col *= 1.6 + h * 2.5;
 
-            // Beat flare on tall ridges.
-            col += float3(0.9, 0.95, 1.1) * h * s.envelope * 1.2;
+            // Wire mask: full colour on the wire, discard between.
+            col *= wire;
 
-            // Combine dim fill and bright wireframe.
-            float fillAlpha = 0.15 * smoothstep(0.0, 0.1, h) * fade;
-            float wireAlpha = wire * fade * (0.4 + h * 1.5);
-            float alpha = max(wireAlpha, fillAlpha);
-
-            return float4(themeGrade(col, u) * alpha * u.dim, alpha);
+            return float4(themeGrade(col, u) * u.dim, 1.0);
         }
         """
     }

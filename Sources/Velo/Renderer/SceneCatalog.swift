@@ -55,6 +55,7 @@ enum SceneCatalog {
         "Topographic Ridge",
         "Plasma Storm",
         "Audio Web",
+        "Dynamic Web",
     ]
 
     static func makeAll() -> [VeloScene] {
@@ -103,6 +104,7 @@ enum SceneCatalog {
             TopographicRidgeScene(),
             PlasmaStormScene(),
             AudioWebScene(),
+            DynamicWebScene(),
         ]
     }
 

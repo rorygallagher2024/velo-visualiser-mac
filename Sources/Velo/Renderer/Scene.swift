@@ -96,6 +96,7 @@ extension VeloScene {
             float  tintR;
             float  tintG;
             float  tintB;
+            float  mixAlpha;
         };
 
         static inline float3 themeGrade(float3 col, constant Uniforms &u) {

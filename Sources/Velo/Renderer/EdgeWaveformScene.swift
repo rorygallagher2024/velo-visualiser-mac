@@ -86,19 +86,20 @@ final class EdgeWaveformScene: VeloScene {
 
             // Displacement from edge: the waveform pushes inward.
             // Baseline sits slightly inside the edge so silence isn't invisible.
-            float amplitude = 0.08 + s.envelope * 0.06;
+            // Toned down to be more subtle and tasteful.
+            float amplitude = 0.04 + s.envelope * 0.03;
             float baseline = 0.015;
             float disp = baseline + wave * amplitude;
 
             // Signed distance from the waveform line.
             float dist = edgeDist - disp;
 
-            // Core line: bright, thin.
-            float px = 1.2 / u.resolution.y;
-            float core = exp(-abs(dist) / max(px * 1.5, 0.001));
+            // Core line: slightly softened so it's not aggressively harsh.
+            float px = 1.5 / u.resolution.y;
+            float core = exp(-abs(dist) / max(px * 1.8, 0.001)) * 0.8;
 
-            // Bloom: softer, wider glow.
-            float bloom = exp(-abs(dist) * 18.0) * 0.6;
+            // Bloom: softer, wider glow, less intense.
+            float bloom = exp(-abs(dist) * 16.0) * 0.4;
 
             float intensity = core + bloom;
 
@@ -114,8 +115,8 @@ final class EdgeWaveformScene: VeloScene {
                 col = mix(midCol, trebleCol, (t - 0.5) * 2.0);
             }
 
-            // Beat brightens.
-            col *= 1.0 + s.envelope * 1.2;
+            // Subtle beat brighten (removed aggressive strobe).
+            col *= 1.0 + s.envelope * 0.3;
 
             col *= intensity;
 

@@ -121,11 +121,17 @@ final class BeatBus: @unchecked Sendable {
         bassRatioSmooth += 0.25 * (rawRatio - bassRatioSmooth)
         bassRatio = bassRatioSmooth
 
-        // Apply sensitivity scaling each frame.
-        let sens = Self.sensitivity.scale
-        detector.thresholdScale = sens
-        let levelBase = levelBaseRef * sens
-        let levelFull = levelFullRef * sens
+        // Source-aware sensitivity: file playback arrives much hotter than the
+        // mic, so use the higher threshold scale (matching Android's systemAudio
+        // path which separates micScale / internalScale on both the detector
+        // threshold and the loudness gate).
+        let isFile = audio.activeSampleRate > 0
+        let detectorSens = isFile ? Self.sensitivity.fileScale : Self.sensitivity.micScale
+        detector.thresholdScale = detectorSens
+        let gateSens = Self.sensitivity.micScale
+        let gateMult: Float = isFile ? 2.2 : 1.0
+        let levelBase = levelBaseRef * gateSens * gateMult
+        let levelFull = levelFullRef * gateSens * gateMult
 
         // Gate: smoothstep(base, full, level) -> 0..1 intensity.
         let g = min(max((levelFollow - levelBase) / (levelFull - levelBase + 1e-6), 0), 1)
