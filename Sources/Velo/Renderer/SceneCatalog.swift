@@ -6,7 +6,7 @@ import Foundation
 /// label from `names`, and the two cannot drift apart. Instruments first, then
 /// the generative ones, matching the Android catalogue's grouping.
 enum SceneCatalog {
-    static let generativeStart = 13
+    static let generativeStart = 16
 
     static let names = [
         // Instruments: honest readouts of the signal.
@@ -23,6 +23,9 @@ enum SceneCatalog {
         "Waveform",
         "Waveform 3D",
         "Waveform 3D Void",
+        "Phase Scope",
+        "CRT Scope",
+        "Lissajous Scope",
         // Generative: driven by band energy rather than measuring it.
         "Beat Pulse",
         "Starscape",
@@ -48,6 +51,9 @@ enum SceneCatalog {
         "Flux",
         "Fractal Cathedral",
         "Corner Shatter",
+        "Strange Attractor",
+        "Topographic Ridge",
+        "Plasma Storm",
         "Audio Web",
     ]
 
@@ -66,6 +72,9 @@ enum SceneCatalog {
             WaveformScene(),
             Waveform3DScene(style: .room),
             Waveform3DScene(style: .void),
+            PhaseScopeScene(),
+            CrtScopeScene(),
+            LissajousScopeScene(),
             BeatPulseScene(),
             StarscapeScene(),
             TunnelScene(),
@@ -90,6 +99,9 @@ enum SceneCatalog {
             FluxScene(),
             MandelboxScene(),
             CornerShatterScene(),
+            StrangeAttractorScene(),
+            TopographicRidgeScene(),
+            PlasmaStormScene(),
             AudioWebScene(),
         ]
     }

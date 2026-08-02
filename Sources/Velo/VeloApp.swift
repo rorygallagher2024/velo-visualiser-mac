@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct VeloApp: App {
@@ -12,9 +13,18 @@ struct VeloApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1280, height: 720)
-        // No `.keyboardShortcut` commands here on purpose. A menu key equivalent
-        // is matched before the responder chain, so declaring M/H/F up here
-        // would shadow the canvas view that actually handles them.
+        // No `.keyboardShortcut` commands here for plain keys (M/H/F etc.) — a
+        // menu key equivalent is matched before the responder chain, so plain
+        // letters declared here would shadow the canvas view. Cmd+key combos
+        // are fine because they don't collide.
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Open Audio File\u{2026}") {
+                    model.openAudioFilePanel()
+                }
+                .keyboardShortcut("o", modifiers: .command)
+            }
+        }
     }
 }
 
@@ -160,6 +170,7 @@ final class AppModel {
 
     let audio = AudioEngine()
     let tone = ToneGenerator()
+    let filePlayer = FilePlayer()
     let hue = HueState()
     let lifx = LifxState()
     let nanoleaf = NanoleafState()
@@ -169,11 +180,46 @@ final class AppModel {
     var toneActive: Bool = false {
         didSet {
             if toneActive {
+                stopFilePlayback()
                 tone.start(audioEngine: audio)
             } else {
                 tone.stop()
             }
         }
+    }
+
+    var playbackURL: URL?
+    var playbackActive: Bool { filePlayer.isPlaying }
+    var playbackPaused: Bool { filePlayer.isPaused }
+
+    func startFilePlayback(url: URL) {
+        if toneActive { toneActive = false }
+        playbackURL = url
+        filePlayer.play(url: url, audioEngine: audio)
+    }
+
+    func stopFilePlayback() {
+        guard filePlayer.isPlaying else { return }
+        filePlayer.stop()
+        playbackURL = nil
+    }
+
+    func toggleFilePlayPause() {
+        filePlayer.togglePlayPause()
+    }
+
+    func seekFile(to time: TimeInterval) {
+        filePlayer.seek(to: time)
+    }
+
+    @MainActor func openAudioFilePanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio, .mp3, .wav, .aiff]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose an audio file to visualise"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        startFilePlayback(url: url)
     }
 
     /// Tone frequency (Hz), log-mapped.

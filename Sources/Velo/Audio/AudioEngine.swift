@@ -74,6 +74,20 @@ final class AudioEngine: @unchecked Sendable {
     private var ring: UnsafeMutablePointer<Float>
     private let writeIndex = ManagedAtomic()
 
+    // Stereo ring: interleaved L/R. Same capacity in frames, double in floats.
+    private var stereoRing: UnsafeMutablePointer<Float>
+    private let stereoWriteIndex = ManagedAtomic()
+    /// True when the source carries meaningful stereo (file playback, XY tone).
+    /// Mic capture — even on a stereo device — is not flagged, since the two
+    /// channels are typically the same signal or nearly so, and the time-delay
+    /// embedding is more useful than a collapsed XY dot.
+    nonisolated(unsafe) var hasStereoSource = false
+
+    /// When non-zero, overrides deviceSampleRate for `sampleRate`. Set by
+    /// FilePlayer to the file's native rate so scenes and FFT use the
+    /// correct timebase while the ring is being fed by file data.
+    nonisolated(unsafe) var activeSampleRate: Double = 0
+
     // Preallocated capture scratch. The render callback used to allocate two
     // buffers per invocation on the real-time thread; malloc there can block on
     // a lock held by another thread and is exactly how audio glitches.
@@ -105,6 +119,8 @@ final class AudioEngine: @unchecked Sendable {
     init() {
         ring = UnsafeMutablePointer<Float>.allocate(capacity: ringCapacity)
         ring.initialize(repeating: 0, count: ringCapacity)
+        stereoRing = UnsafeMutablePointer<Float>.allocate(capacity: ringCapacity * 2)
+        stereoRing.initialize(repeating: 0, count: ringCapacity * 2)
         captureL = UnsafeMutablePointer<Float>.allocate(capacity: maxCallbackFrames)
         captureR = UnsafeMutablePointer<Float>.allocate(capacity: maxCallbackFrames)
         captureL.initialize(repeating: 0, count: maxCallbackFrames)
@@ -119,6 +135,7 @@ final class AudioEngine: @unchecked Sendable {
         stop()
         vDSP_destroy_fftsetup(fft)
         ring.deallocate()
+        stereoRing.deallocate()
         captureL.deallocate()
         captureR.deallocate()
         free(captureList.unsafeMutablePointer)
@@ -431,7 +448,8 @@ final class AudioEngine: @unchecked Sendable {
     }
 
     /// Called on the real-time thread. Writes only; never allocates or locks.
-    /// Mono-summed here, as it always was: every scene wants the sum.
+    /// Mono-summed into the main ring (every scene wants the sum), and
+    /// interleaved L/R into the stereo ring (XY scopes want the separation).
     fileprivate func write(
         left: UnsafePointer<Float>, right: UnsafePointer<Float>, frames: Int
     ) {
@@ -440,9 +458,17 @@ final class AudioEngine: @unchecked Sendable {
             ring[(w &+ i) % ringCapacity] = (left[i] + right[i]) * 0.5
         }
         writeIndex.store(w &+ frames)
+
+        let sw = stereoWriteIndex.load()
+        for i in 0..<frames {
+            let si = (sw &+ i) * 2
+            stereoRing[si % (ringCapacity * 2)] = left[i]
+            stereoRing[(si &+ 1) % (ringCapacity * 2)] = right[i]
+        }
+        stereoWriteIndex.store(sw &+ frames)
     }
 
-    var sampleRate: Double { deviceSampleRate }
+    var sampleRate: Double { activeSampleRate > 0 ? activeSampleRate : deviceSampleRate }
 
     /// Frames written since the engine started. A consumer that needs the
     /// stream rather than a snapshot holds one of these as a cursor.
@@ -498,6 +524,27 @@ final class AudioEngine: @unchecked Sendable {
         writeIndex.store(w &+ count)
     }
 
+    /// Write stereo samples from an external source into both rings.
+    /// Mono-sums into the main ring for analysis, interleaves into the
+    /// stereo ring for XY scopes.
+    func injectStereoSamples(
+        left: UnsafePointer<Float>, right: UnsafePointer<Float>, count: Int
+    ) {
+        let w = writeIndex.load()
+        for i in 0..<count {
+            ring[(w &+ i) % ringCapacity] = (left[i] + right[i]) * 0.5
+        }
+        writeIndex.store(w &+ count)
+
+        let sw = stereoWriteIndex.load()
+        for i in 0..<count {
+            let si = (sw &+ i) * 2
+            stereoRing[si % (ringCapacity * 2)] = left[i]
+            stereoRing[(si &+ 1) % (ringCapacity * 2)] = right[i]
+        }
+        stereoWriteIndex.store(sw &+ count)
+    }
+
     /// Fill the ring with broadband synthetic signal, for `SelfTest`.
     ///
     /// A sum of tones across the spectrum rather than one sine, so every band
@@ -538,6 +585,22 @@ final class AudioEngine: @unchecked Sendable {
             dst[i] = ring[(w &+ ringCapacity &- n &+ i) % ringCapacity]
         }
         if count > n { for i in n..<count { dst[i] = 0 } }
+    }
+
+    /// Copy the newest `count` frames of interleaved stereo (L, R, L, R, ...)
+    /// into `dst`. The buffer must hold at least `count * 2` floats.
+    func fillStereoWaveform(_ dst: UnsafeMutablePointer<Float>, count: Int) {
+        let sw = stereoWriteIndex.load()
+        let n = min(count, ringCapacity)
+        let cap2 = ringCapacity * 2
+        for i in 0..<n {
+            let si = (sw &+ ringCapacity &- n &+ i) * 2
+            dst[i * 2]     = stereoRing[si % cap2]
+            dst[i * 2 + 1] = stereoRing[(si &+ 1) % cap2]
+        }
+        if count > n {
+            for i in n..<count { dst[i * 2] = 0; dst[i * 2 + 1] = 0 }
+        }
     }
 
     /// 31 third-octave bands (0...1) — the reading a real RTA gives.

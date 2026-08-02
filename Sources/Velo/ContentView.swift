@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The window. The canvas is the whole surface — no persistent chrome, matching
 /// the Android app's "pure output" rule. Controls slide in only when asked for,
@@ -111,7 +112,8 @@ struct ContentView: View {
 
             if !model.menuOpen && !model.lightingOpen && !model.visualPickerOpen
                 && !model.syphonEnabled {
-                HintBar(hdrAvailable: model.hdrAvailable)
+                HintBar(hdrAvailable: model.hdrAvailable,
+                       sceneName: SceneCatalog.names[model.sceneIndex])
                     .padding(14)
             }
         }
@@ -128,6 +130,14 @@ struct ContentView: View {
             }
             if let stats = model.statsBox.stats { model.perf = stats.snapshot }
             model.audioStatus = model.audio.status()
+        }
+        .onDrop(of: [.audio], isTargeted: nil) { providers in
+            guard let provider = providers.first else { return false }
+            provider.loadItem(forTypeIdentifier: UTType.audio.identifier, options: nil) { data, _ in
+                guard let url = data as? URL else { return }
+                DispatchQueue.main.async { model.startFilePlayback(url: url) }
+            }
+            return true
         }
         .onAppear { installKeyMonitor() }
         .onDisappear {
@@ -219,6 +229,7 @@ struct ContentView: View {
 /// open the menu on purpose: a visible control would show up in the OBS capture.
 private struct HintBar: View {
     var hdrAvailable: Bool
+    var sceneName: String = ""
     @State private var visible = true
 
     private static let allShortcuts: [(key: String, action: String)] = [
@@ -228,9 +239,11 @@ private struct HintBar: View {
     ]
 
     private var shortcuts: [(key: String, action: String)] {
-        hdrAvailable
-            ? Self.allShortcuts
-            : Self.allShortcuts.filter { $0.key != "H" }
+        Self.allShortcuts.filter { s in
+            if s.key == "H" && !hdrAvailable { return false }
+            if s.key == "D" && sceneName != "Crystal Swarm" { return false }
+            return true
+        }
     }
 
     var body: some View {
@@ -349,45 +362,6 @@ private struct ControlPanel: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Beat Sensitivity")
-                        .font(Velo.label(13))
-                        .foregroundStyle(.white.opacity(0.5))
-                    HStack(spacing: 4) {
-                        ForEach(BeatSensitivity.allCases, id: \.self) { s in
-                            Button(s.label) { model.beatSensitivity = s }
-                                .buttonStyle(.bordered)
-                                .controlSize(.regular)
-                                .opacity(model.beatSensitivity == s ? 1.0 : 0.4)
-                        }
-                    }
-                    caption("How readily the beat detector fires. Low is "
-                            + "calmer, High triggers on quieter hits.")
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle("Show beats on visuals", isOn: $model.showBeatsOnVisuals)
-                        .toggleStyle(.switch)
-                    caption("When off, visuals respond to the music's energy but "
-                            + "don't flash on individual beats. Useful with chroma "
-                            + "key in OBS, where white flashes go transparent. "
-                            + "Lights and haptics still react to beats.")
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle("4/4 Music Mode", isOn: $model.fourFourEnabled)
-                        .toggleStyle(.switch)
-                    if model.fourFourEnabled {
-                        caption("Experimental. Locks onto a steady four-to-the-floor beat "
-                                + "and ignores stray hits between the beats, so the visuals "
-                                + "and lights pulse cleanly on the grid. Reads the beat from "
-                                + "the audio itself — no Ableton Link or DJ software needed. "
-                                + "Best for house, techno and other steady 4/4 electronic "
-                                + "music. Leave it off for live music, breakbeat or anything "
-                                + "with a loose or changing rhythm.")
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
                     Toggle("Test tone", isOn: $model.toneActive)
                         .toggleStyle(.switch)
                     caption("Replaces the mic with a synthetic sine wave. Audible "
@@ -446,6 +420,20 @@ private struct ControlPanel: View {
                     }
                 }
 
+                VStack(alignment: .leading, spacing: 6) {
+                    Button("Open Audio File\u{2026}") { openAudioFile() }
+                        .buttonStyle(.bordered)
+                        .disabled(model.toneActive)
+                        .opacity(model.toneActive ? 0.4 : 1)
+                    if model.playbackActive {
+                        FileTransportView(model: model)
+                    } else {
+                        caption("Play a local file through the visuals. Stereo is "
+                                + "preserved for XY scopes and oscilloscope music. "
+                                + "Cmd+O or drag a file onto the window.")
+                    }
+                }
+
                 Divider().overlay(.white.opacity(0.12))
 
                 section("Ableton Link")
@@ -482,6 +470,45 @@ private struct ControlPanel: View {
                 Divider().overlay(.white.opacity(0.12))
 
                 section("Display")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Beat Sensitivity")
+                        .font(Velo.label(13))
+                        .foregroundStyle(.white.opacity(0.5))
+                    HStack(spacing: 4) {
+                        ForEach(BeatSensitivity.allCases, id: \.self) { s in
+                            Button(s.label) { model.beatSensitivity = s }
+                                .buttonStyle(.bordered)
+                                .controlSize(.regular)
+                                .opacity(model.beatSensitivity == s ? 1.0 : 0.4)
+                        }
+                    }
+                    caption("How readily the beat detector fires. Low is "
+                            + "calmer, High triggers on quieter hits.")
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Show beats on visuals", isOn: $model.showBeatsOnVisuals)
+                        .toggleStyle(.switch)
+                    caption("When off, visuals respond to the music's energy but "
+                            + "don't flash on individual beats. Useful with chroma "
+                            + "key in OBS, where white flashes go transparent. "
+                            + "Lights and haptics still react to beats.")
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("4/4 Music Mode", isOn: $model.fourFourEnabled)
+                        .toggleStyle(.switch)
+                    if model.fourFourEnabled {
+                        caption("Experimental. Locks onto a steady four-to-the-floor beat "
+                                + "and ignores stray hits between the beats, so the visuals "
+                                + "and lights pulse cleanly on the grid. Reads the beat from "
+                                + "the audio itself — no Ableton Link or DJ software needed. "
+                                + "Best for house, techno and other steady 4/4 electronic "
+                                + "music. Leave it off for live music, breakbeat or anything "
+                                + "with a loose or changing rhythm.")
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle("HDR", isOn: $model.hdrEnabled)
                         .toggleStyle(.switch)
@@ -576,6 +603,10 @@ private struct ControlPanel: View {
         .sheet(isPresented: $model.showingPrivacy) {
             PrivacyView()
         }
+    }
+
+    private func openAudioFile() {
+        model.openAudioFilePanel()
     }
 
     private var swarmGridBinding: Binding<Float> {
@@ -693,6 +724,110 @@ private struct ControlPanel: View {
             .font(Velo.light(13))
             .foregroundStyle(.white.opacity(0.5))
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Transport controls for local file playback. Shown inline in the Audio
+/// section of ControlPanel when a file is loaded.
+private struct FileTransportView: View {
+    @Bindable var model: AppModel
+    @State private var seekDragging = false
+
+    private let transportTick = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    @State private var displayTime: TimeInterval = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let name = model.filePlayer.fileName {
+                Text(name)
+                    .font(Velo.display(15))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    model.toggleFilePlayPause()
+                } label: {
+                    Image(systemName: model.playbackPaused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 36, height: 28)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
+                Button {
+                    model.stopFilePlayback()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 36, height: 28)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
+                Spacer()
+
+                Toggle(isOn: Binding(
+                    get: { model.filePlayer.looping },
+                    set: { model.filePlayer.looping = $0 }
+                )) {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 28, height: 28)
+                }
+                .toggleStyle(.button)
+                .controlSize(.regular)
+                .opacity(model.filePlayer.looping ? 1.0 : 0.4)
+            }
+
+            let dur = model.filePlayer.duration
+            if dur > 0 {
+                VStack(spacing: 6) {
+                    Slider(
+                        value: seekBinding(duration: dur),
+                        in: 0...1
+                    )
+                    .frame(maxWidth: .infinity)
+                    HStack {
+                        Text(Self.formatTime(displayTime))
+                            .font(Velo.readout(12))
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.6))
+                        Spacer()
+                        Text(Self.formatTime(dur))
+                            .font(Velo.readout(12))
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+            }
+        }
+        .padding(.top, 4)
+        .onReceive(transportTick) { _ in
+            if !seekDragging {
+                displayTime = model.filePlayer.currentTime
+            }
+        }
+    }
+
+    private func seekBinding(duration: TimeInterval) -> Binding<Double> {
+        Binding(
+            get: { duration > 0 ? displayTime / duration : 0 },
+            set: { fraction in
+                seekDragging = true
+                displayTime = fraction * duration
+                model.seekFile(to: fraction * duration)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    seekDragging = false
+                }
+            }
+        )
+    }
+
+    static func formatTime(_ t: TimeInterval) -> String {
+        let s = max(0, Int(t))
+        return String(format: "%d:%02d", s / 60, s % 60)
     }
 }
 

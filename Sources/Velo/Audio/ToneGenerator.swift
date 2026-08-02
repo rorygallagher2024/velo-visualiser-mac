@@ -32,6 +32,7 @@ final class ToneGenerator {
         stop()
         self.audioEngine = audioEngine
         audioEngine.stop()
+        audioEngine.hasStereoSource = true
 
         let engine = AVAudioEngine()
         let format = AVAudioFormat(
@@ -65,8 +66,9 @@ final class ToneGenerator {
             var pR = self.phaseR
             var g = self.gain
 
-            let mono = UnsafeMutablePointer<Float>.allocate(capacity: count)
-            defer { mono.deallocate() }
+            let left = UnsafeMutablePointer<Float>.allocate(capacity: count)
+            let right = UnsafeMutablePointer<Float>.allocate(capacity: count)
+            defer { left.deallocate(); right.deallocate() }
 
             for i in 0..<count {
                 g += (target - g) * self.gainSmooth
@@ -74,7 +76,8 @@ final class ToneGenerator {
                 let r = Float(sin(pR * .pi * 2)) * g
                 buf0[i] = l
                 buf1[i] = r
-                mono[i] = (l + r) * 0.5
+                left[i] = l
+                right[i] = r
                 pL = (pL + incL).truncatingRemainder(dividingBy: 1)
                 pR = (pR + incR).truncatingRemainder(dividingBy: 1)
             }
@@ -83,7 +86,7 @@ final class ToneGenerator {
             self.phaseR = pR
             self.gain = g
 
-            self.audioEngine?.injectSamples(mono, count: count)
+            self.audioEngine?.injectStereoSamples(left: left, right: right, count: count)
             return noErr
         }
 
@@ -103,6 +106,7 @@ final class ToneGenerator {
         avEngine?.stop()
         avEngine = nil
         if let engine = audioEngine {
+            engine.hasStereoSource = false
             engine.start()
             audioEngine = nil
         }

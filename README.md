@@ -24,9 +24,16 @@ layers in the way.
    visualisers, except now capable of being more responsive at high frame rates with HDR highlights,
    on a canvas that fills whatever display you give it.
 
-2. **A live performance tool.** With built-in Syphon support - It is built to be captured. 
+2. **A live performance tool.** With built-in Syphon support - It is built to be captured.
     The canvas carries no on screen controls at all, so nothing of the app's own interface can
     land in a recording or a stream, and everything is on a key instead.
+
+3. **Playing Oscilloscope Music.** Features dedicated, true stereo "Lissajous Scope"
+   and phosphor "CRT Scope" modes designed to perfectly render the mathematical
+   audio-visual vector art of oscilloscope music (like Jerobeam Fenderson).
+   Local file playback feeds the scopes sample-accurately at the file's native
+   rate, up to 192 kHz. *(We highly recommend lossless files like WAV or FLAC,
+   as MP3 or YouTube compression will permanently destroy the shape geometries!)*
 
 4. **Watching what your mix is actually doing.** With a real third octave analyser, two
    oscilloscopes, a scrolling spectrogram and a peak reading LED panel, all fed
@@ -34,8 +41,20 @@ layers in the way.
 
 ## Core Features
 
-* **High-FPS, HDR-Capable Visuals:** With real highlights on displays that supports
+* **44 Audio-Reactive Visuals:** Waveforms, spectra, particle fluids, scrolling
+  spectrograms, dot-matrix LED meters, true stereo XY oscilloscopes (including a
+  phosphor CRT scope for oscilloscope music), and more.
+* **High-FPS, HDR-Capable Visuals:** With real highlights on displays that support
   extended range.
+* **Local File Playback:** Open audio files (WAV, FLAC, AIFF, MP3, AAC) with
+  Cmd+O or drag and drop. Playback runs at the file's native sample rate (up to
+  192 kHz / 32-bit float) and feeds stereo data sample-accurately into the scope
+  visuals. Includes seek, loop and full transport controls.
+* **True Stereo Oscilloscope Rendering:** Dedicated "Lissajous Scope" and
+  phosphor "CRT Scope" visuals for rendering mathematical vector audio art
+  (oscilloscope music). The CRT scope features velocity-modulated brightness,
+  barrel curvature and a glass-tube vignette, just like a real cathode-ray tube.
+  Lossless files give the cleanest traces.
 * **Any Core Audio Input:** Route your system output through a loopback device
   and visualise whatever is playing, or take your interface's feed directly.
   Anything macOS lists as an input can drive it.
@@ -77,6 +96,8 @@ The canvas carries no on screen controls, so everything is a key.
 | `F` | fullscreen |
 | `H` | HDR on or off (hidden when display has no HDR) |
 | `P` | diagnostics overlay |
+| `Cmd+O` | open audio file for playback |
+| `Space` | play/pause file playback |
 | `1` to `9`, `0` | jump to a favourite (or catalogue position when no favourites) |
 | `left` `right` | step through the visuals |
 

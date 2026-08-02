@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "velo-mac",
+      "runtimeExecutable": "swift",
+      "runtimeArgs": ["run", "--package-path", "/Users/rory/velo-visualiser-mac"],
+      "port": 0
+    }
+  ]
+}

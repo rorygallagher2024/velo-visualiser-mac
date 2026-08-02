@@ -393,9 +393,10 @@ final class MetalCanvasNSView: NSView {
 
     // MARK: - Fullscreen
     //
-    // Native macOS fullscreen (a Space). `displaySyncEnabled` is toggled off
-    // on entry to bypass the window server's VRR throttle, and back on when
-    // returning to windowed mode for precise vsync pacing.
+    // Native macOS fullscreen (a Space). displaySyncEnabled stays on in both
+    // modes — disabling it removes the vsync gate and causes visible tearing.
+    // The display link's preferredFrameRateRange tells the VRR system what
+    // rate we need, which prevents the throttle the disable was working around.
 
     var isFullScreen: Bool {
         window?.styleMask.contains(.fullScreen) ?? false
@@ -422,15 +423,6 @@ final class MetalCanvasNSView: NSView {
     /// rather than around the frame the app set.
     @objc func fullScreenDidChange() {
         guard let window else { return }
-        // In a fullscreen Space the window server uses VRR to throttle
-        // ProMotion displays when it sees no Core Animation transactions —
-        // which is always the case for an app that renders on its own thread
-        // with presentsWithTransaction = false. Disabling display sync stops
-        // the layer from gating presentation on the system's vsync cadence,
-        // letting the render thread's own pacing (drawable semaphore + Metal 4
-        // waitForDrawable/signalDrawable) control timing. In windowed mode we
-        // re-enable it for precise vsync-locked pacing.
-        metalLayer.displaySyncEnabled = !isFullScreen
         NSApp.presentationOptions = []
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
