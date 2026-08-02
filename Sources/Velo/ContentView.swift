@@ -530,9 +530,14 @@ private struct ControlPanel: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
+                    // The panel sets an explicit white foreground, which
+                    // overrides the dimming SwiftUI would otherwise apply to a
+                    // disabled control — so the switch has to be dimmed by
+                    // hand or it reads as live but unresponsive.
                     Toggle("HDR", isOn: $model.hdrEnabled)
                         .toggleStyle(.switch)
                         .disabled(!model.hdrAvailable)
+                        .opacity(model.hdrAvailable ? 1 : 0.4)
                     if model.hdrAvailable {
                         caption("Brighter highlights, on displays that can show them.")
                         if let warning = Self.headroomWarning(hdrOn: model.hdrEnabled) {
@@ -1327,6 +1332,7 @@ private struct LightingPanel: View {
             Toggle("Disable visuals", isOn: $model.visualsDisabled)
                 .toggleStyle(.switch)
                 .disabled(model.syphonEnabled)
+                .opacity(model.syphonEnabled ? 0.4 : 1)
             Text(model.syphonEnabled
                  ? "Visuals are already off-screen in Syphon mode."
                  : "Black out the canvas and run lighting only.")

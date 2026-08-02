@@ -73,7 +73,17 @@ final class BeatBus: @unchecked Sendable {
     private var bassRatioSmooth: Float = 0.5
 
     private let bassLpAlpha: Float = 0.025
-    private let levelDecay: Float = 0.992
+    /// Peak-hold falloff, expressed as Android's per-frame factor at 60 Hz and
+    /// then applied per unit time.
+    ///
+    /// Two things were wrong here. The constant was 0.992 against Android's
+    /// 0.93, and it was applied once per frame rather than per second — so on a
+    /// 120 Hz display the gate took 3.9 s to fall below its own threshold
+    /// instead of 0.9 s, and the beat kept running for seconds after the music
+    /// stopped. Raising it to a power of `dt * 60` reproduces Android's curve
+    /// at any frame rate, which matters here because this app runs at 120 and
+    /// 240 Hz where Android runs at 60.
+    private let levelDecayPerFrame60: Float = 0.93
     private let micNoiseFloor: Float = 0.0015
 
     private let levelBaseRef: Float = 0.024 * 0.4
@@ -114,7 +124,8 @@ final class BeatBus: @unchecked Sendable {
         let bassRms = sqrtf(bassAcc * inv)
         let trebRms = sqrtf(trebAcc * inv)
 
-        levelFollow = peak > levelFollow ? peak : levelFollow * levelDecay
+        let decay = powf(levelDecayPerFrame60, dt * 60)
+        levelFollow = peak > levelFollow ? peak : levelFollow * decay
         level = levelFollow
 
         let rawRatio = peak < micNoiseFloor ? 0 : bassRms / (bassRms + trebRms + 1e-6)
