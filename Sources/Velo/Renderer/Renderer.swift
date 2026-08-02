@@ -68,7 +68,19 @@ final class Renderer: @unchecked Sendable {
     private let compiler: MTL4Compiler
     private var allocators: [MTL4CommandAllocator] = []
     private var commandBuffers: [MTL4CommandBuffer] = []
-    private var argumentTable: MTL4ArgumentTable
+    /// Bindings, one table per pass per in-flight frame.
+    ///
+    /// A Metal 4 argument table is GPU-visible memory: the GPU reads the
+    /// bindings when the pass *executes*, not when it is encoded. Sharing one
+    /// table across the passes of a frame therefore makes every pass see the
+    /// last writes — during a crossfade the outgoing scene sampled the incoming
+    /// scene's data buffer, and since each scene reads that buffer to its own
+    /// layout it drew garbage. Giving every pass its own table keeps each set
+    /// of bindings intact until the GPU is finished with it.
+    private var argumentTables: [[MTL4ArgumentTable]] = []
+
+    /// Most passes in one frame: outgoing scene, incoming scene, mix, blit.
+    private static let passesPerFrame = 4
     private var pipeline: MTLRenderPipelineState?
     private var library: MTLLibrary?
     private var pixelFormat: MTLPixelFormat = .bgra8Unorm
@@ -140,9 +152,15 @@ final class Renderer: @unchecked Sendable {
         let tableDescriptor = MTL4ArgumentTableDescriptor()
         tableDescriptor.maxBufferBindCount = 4
         tableDescriptor.maxTextureBindCount = 4
-        guard let table = try? device.makeArgumentTable(descriptor: tableDescriptor)
-        else { return nil }
-        self.argumentTable = table
+        for _ in 0..<Self.maxFramesInFlight {
+            var perPass: [MTL4ArgumentTable] = []
+            for _ in 0..<Self.passesPerFrame {
+                guard let t = try? device.makeArgumentTable(descriptor: tableDescriptor)
+                else { return nil }
+                perPass.append(t)
+            }
+            argumentTables.append(perPass)
+        }
 
         for _ in 0..<Self.maxFramesInFlight {
             guard let u = device.makeBuffer(
@@ -296,7 +314,7 @@ final class Renderer: @unchecked Sendable {
         } else {
             transitioningFromScene = nil
             oldPipeline = nil
-            transitionTexture = nil
+            releaseTransitionTexture()
         }
 
         // Build first, swap second. A failed compile leaves the current scene
@@ -311,6 +329,45 @@ final class Renderer: @unchecked Sendable {
             transitioningFromScene = nil
             oldPipeline = nil
         }
+    }
+
+    /// The scratch texture the incoming scene is drawn into during a crossfade.
+    ///
+    /// Reused for as long as it stays compatible with the target. The format
+    /// has to match as well as the size: the incoming scene is drawn with the
+    /// live pipeline, and a pipeline's colour attachment format must equal the
+    /// texture it renders into, so an HDR toggle at an unchanged size still
+    /// needs a new texture. Replacing one also drops the old allocation from
+    /// the residency set, which otherwise accumulated a full-size texture per
+    /// transition for the lifetime of the process.
+    private func ensureTransitionTexture(matching target: MTLTexture) {
+        if let t = transitionTexture,
+           t.width == target.width,
+           t.height == target.height,
+           t.pixelFormat == target.pixelFormat {
+            return
+        }
+
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: target.pixelFormat,
+            width: target.width, height: target.height, mipmapped: false)
+        desc.usage = [.renderTarget, .shaderRead]
+        desc.storageMode = .private
+
+        guard let fresh = device.makeTexture(descriptor: desc) else { return }
+        if let old = transitionTexture { residencySet?.removeAllocation(old) }
+        transitionTexture = fresh
+        residencySet?.addAllocation(fresh)
+        residencySet?.commit()
+        residencySet?.requestResidency()
+    }
+
+    /// Drop the crossfade scratch texture and its residency entry.
+    private func releaseTransitionTexture() {
+        guard let old = transitionTexture else { return }
+        residencySet?.removeAllocation(old)
+        residencySet?.commit()
+        transitionTexture = nil
     }
 
     func cycleScene(_ delta: Int) { selectScene(sceneIndex + delta) }
@@ -412,14 +469,15 @@ final class Renderer: @unchecked Sendable {
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+            let table = argumentTables[slot][0]
             encoder.setRenderPipelineState(pipeline)
-            argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-            argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+            table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+            table.setAddress(bandBuffers[slot].gpuAddress, index: 1)
             if let history = scene.historyBuffer {
-                argumentTable.setAddress(history.gpuAddress, index: 2)
+                table.setAddress(history.gpuAddress, index: 2)
             }
-            encoder.setArgumentTable(argumentTable, stages: .fragment)
-            encoder.setArgumentTable(argumentTable, stages: .vertex)
+            encoder.setArgumentTable(table, stages: .fragment)
+            encoder.setArgumentTable(table, stages: .vertex)
             let draw = scene.draw
             encoder.drawPrimitives(
                 primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
@@ -478,9 +536,12 @@ final class Renderer: @unchecked Sendable {
         if transitioningFromScene != nil, transitionStartTime > 0, oldPipeline != nil {
             transitionProgress = min(max((time - transitionStartTime) / transitionDuration, 0.0), 1.0)
             if transitionProgress >= 1.0 {
+                // The scratch texture is kept for the next crossfade rather
+                // than freed: re-allocating a full-size target on every scene
+                // change is wasteful, and it is released outright when
+                // transitions are switched off.
                 transitioningFromScene = nil
                 oldPipeline = nil
-                transitionTexture = nil
             }
         } else {
             transitionProgress = 1.0
@@ -519,17 +580,7 @@ final class Renderer: @unchecked Sendable {
         }
 
         if transitionProgress < 1.0 {
-            if transitionTexture?.width != renderTarget.width || transitionTexture?.height != renderTarget.height {
-                let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: renderTarget.pixelFormat, width: renderTarget.width, height: renderTarget.height, mipmapped: false)
-                desc.usage = [.renderTarget, .shaderRead]
-                desc.storageMode = .private
-                transitionTexture = device.makeTexture(descriptor: desc)
-                if let t = transitionTexture {
-                    residencySet?.addAllocation(t)
-                    residencySet?.commit()
-                    residencySet?.requestResidency()
-                }
-            }
+            ensureTransitionTexture(matching: renderTarget)
         }
 
         let theme = ThemePreset.current.grade
@@ -568,20 +619,21 @@ final class Renderer: @unchecked Sendable {
             oldPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: oldPass) {
+                let table = argumentTables[slot][0]
                 encoder.setRenderPipelineState(oldPSO)
-                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-                argumentTable.setAddress(oldBandBuffers[slot].gpuAddress, index: 1)
+                table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                table.setAddress(oldBandBuffers[slot].gpuAddress, index: 1)
                 if let history = oldScene.historyBuffer {
-                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                    table.setAddress(history.gpuAddress, index: 2)
                 }
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
-                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                encoder.setArgumentTable(table, stages: .fragment)
+                encoder.setArgumentTable(table, stages: .vertex)
                 let draw = oldScene.draw
                 encoder.drawPrimitives(
                     primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
                 encoder.endEncoding()
             }
-            
+
             // Render new scene to transitionTexture
             let newPass = MTL4RenderPassDescriptor()
             newPass.colorAttachments[0].texture = tTex
@@ -590,30 +642,42 @@ final class Renderer: @unchecked Sendable {
             newPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
 
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: newPass) {
+                let table = argumentTables[slot][1]
                 encoder.setRenderPipelineState(pipeline)
-                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-                argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+                table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                table.setAddress(bandBuffers[slot].gpuAddress, index: 1)
                 if let history = scene.historyBuffer {
-                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                    table.setAddress(history.gpuAddress, index: 2)
                 }
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
-                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                encoder.setArgumentTable(table, stages: .fragment)
+                encoder.setArgumentTable(table, stages: .vertex)
                 let draw = scene.draw
                 encoder.drawPrimitives(
                     primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
                 encoder.endEncoding()
             }
-            
+
             // Mix transitionTexture over renderTarget
             let mixPass = MTL4RenderPassDescriptor()
             mixPass.colorAttachments[0].texture = renderTarget
             mixPass.colorAttachments[0].loadAction = .load
             mixPass.colorAttachments[0].storeAction = .store
-            
+
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: mixPass), let mixPSO = mixPipeline {
+                // This pass samples the texture the incoming-scene pass just
+                // wrote, and blends over the target the outgoing-scene pass
+                // wrote. Metal 4 does not track those hazards, so without
+                // waiting we sample tiles the GPU is still writing — seen as
+                // sparkle around high-contrast detail like Aurora Drift's
+                // stars and Nebula's bright cores.
+                encoder.barrier(afterQueueStages: .fragment,
+                                beforeStages: .fragment,
+                                visibilityOptions: .device)
+                let table = argumentTables[slot][2]
                 encoder.setRenderPipelineState(mixPSO)
-                argumentTable.setTexture(tTex.gpuResourceID, index: 1)
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                table.setTexture(tTex.gpuResourceID, index: 1)
+                encoder.setArgumentTable(table, stages: .fragment)
                 encoder.drawPrimitives(
                     primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
                 encoder.endEncoding()
@@ -627,14 +691,15 @@ final class Renderer: @unchecked Sendable {
             pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+                let table = argumentTables[slot][0]
                 encoder.setRenderPipelineState(pipeline)
-                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-                argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+                table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                table.setAddress(bandBuffers[slot].gpuAddress, index: 1)
                 if let history = scene.historyBuffer {
-                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                    table.setAddress(history.gpuAddress, index: 2)
                 }
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
-                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                encoder.setArgumentTable(table, stages: .fragment)
+                encoder.setArgumentTable(table, stages: .vertex)
                 let draw = scene.draw
                 encoder.drawPrimitives(
                     primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
@@ -651,9 +716,16 @@ final class Renderer: @unchecked Sendable {
             blitPass.colorAttachments[0].storeAction = .store
 
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: blitPass) {
+                // Same hazard again: this samples the offscreen the scene (or
+                // mix) pass just rendered into. Unlike the mix barrier this one
+                // applies whenever Syphon is on, transition or not.
+                encoder.barrier(afterQueueStages: .fragment,
+                                beforeStages: .fragment,
+                                visibilityOptions: .device)
+                let table = argumentTables[slot][3]
                 encoder.setRenderPipelineState(blitPSO)
-                argumentTable.setTexture(renderTarget.gpuResourceID, index: 0)
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                table.setTexture(renderTarget.gpuResourceID, index: 0)
+                encoder.setArgumentTable(table, stages: .fragment)
                 encoder.drawPrimitives(
                     primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
                 encoder.endEncoding()
@@ -716,9 +788,12 @@ final class Renderer: @unchecked Sendable {
         if transitioningFromScene != nil, transitionStartTime > 0, oldPipeline != nil {
             transitionProgress = min(max((time - transitionStartTime) / transitionDuration, 0.0), 1.0)
             if transitionProgress >= 1.0 {
+                // The scratch texture is kept for the next crossfade rather
+                // than freed: re-allocating a full-size target on every scene
+                // change is wasteful, and it is released outright when
+                // transitions are switched off.
                 transitioningFromScene = nil
                 oldPipeline = nil
-                transitionTexture = nil
             }
         } else {
             transitionProgress = 1.0
@@ -732,17 +807,7 @@ final class Renderer: @unchecked Sendable {
         }
 
         if transitionProgress < 1.0 {
-            if transitionTexture?.width != offscreen.width || transitionTexture?.height != offscreen.height {
-                let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: offscreen.pixelFormat, width: offscreen.width, height: offscreen.height, mipmapped: false)
-                desc.usage = [.renderTarget, .shaderRead]
-                desc.storageMode = .private
-                transitionTexture = device.makeTexture(descriptor: desc)
-                if let t = transitionTexture {
-                    residencySet?.addAllocation(t)
-                    residencySet?.commit()
-                    residencySet?.requestResidency()
-                }
-            }
+            ensureTransitionTexture(matching: offscreen)
         }
 
         let theme = ThemePreset.current.grade
@@ -776,20 +841,21 @@ final class Renderer: @unchecked Sendable {
             oldPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: oldPass) {
+                let table = argumentTables[slot][0]
                 encoder.setRenderPipelineState(oldPSO)
-                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-                argumentTable.setAddress(oldBandBuffers[slot].gpuAddress, index: 1)
+                table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                table.setAddress(oldBandBuffers[slot].gpuAddress, index: 1)
                 if let history = oldScene.historyBuffer {
-                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                    table.setAddress(history.gpuAddress, index: 2)
                 }
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
-                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                encoder.setArgumentTable(table, stages: .fragment)
+                encoder.setArgumentTable(table, stages: .vertex)
                 let draw = oldScene.draw
                 encoder.drawPrimitives(
                     primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
                 encoder.endEncoding()
             }
-            
+
             // Render new scene
             let newPass = MTL4RenderPassDescriptor()
             newPass.colorAttachments[0].texture = tTex
@@ -798,30 +864,42 @@ final class Renderer: @unchecked Sendable {
             newPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
 
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: newPass) {
+                let table = argumentTables[slot][1]
                 encoder.setRenderPipelineState(pipeline)
-                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-                argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+                table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                table.setAddress(bandBuffers[slot].gpuAddress, index: 1)
                 if let history = scene.historyBuffer {
-                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                    table.setAddress(history.gpuAddress, index: 2)
                 }
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
-                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                encoder.setArgumentTable(table, stages: .fragment)
+                encoder.setArgumentTable(table, stages: .vertex)
                 let draw = scene.draw
                 encoder.drawPrimitives(
                     primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)
                 encoder.endEncoding()
             }
-            
+
             // Mix
             let mixPass = MTL4RenderPassDescriptor()
             mixPass.colorAttachments[0].texture = offscreen
             mixPass.colorAttachments[0].loadAction = .load
             mixPass.colorAttachments[0].storeAction = .store
-            
+
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: mixPass), let mixPSO = mixPipeline {
+                // This pass samples the texture the incoming-scene pass just
+                // wrote, and blends over the target the outgoing-scene pass
+                // wrote. Metal 4 does not track those hazards, so without
+                // waiting we sample tiles the GPU is still writing — seen as
+                // sparkle around high-contrast detail like Aurora Drift's
+                // stars and Nebula's bright cores.
+                encoder.barrier(afterQueueStages: .fragment,
+                                beforeStages: .fragment,
+                                visibilityOptions: .device)
+                let table = argumentTables[slot][2]
                 encoder.setRenderPipelineState(mixPSO)
-                argumentTable.setTexture(tTex.gpuResourceID, index: 1)
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
+                table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                table.setTexture(tTex.gpuResourceID, index: 1)
+                encoder.setArgumentTable(table, stages: .fragment)
                 encoder.drawPrimitives(
                     primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
                 encoder.endEncoding()
@@ -834,14 +912,15 @@ final class Renderer: @unchecked Sendable {
             pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
+                let table = argumentTables[slot][0]
                 encoder.setRenderPipelineState(pipeline)
-                argumentTable.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
-                argumentTable.setAddress(bandBuffers[slot].gpuAddress, index: 1)
+                table.setAddress(uniformBuffers[slot].gpuAddress, index: 0)
+                table.setAddress(bandBuffers[slot].gpuAddress, index: 1)
                 if let history = scene.historyBuffer {
-                    argumentTable.setAddress(history.gpuAddress, index: 2)
+                    table.setAddress(history.gpuAddress, index: 2)
                 }
-                encoder.setArgumentTable(argumentTable, stages: .fragment)
-                encoder.setArgumentTable(argumentTable, stages: .vertex)
+                encoder.setArgumentTable(table, stages: .fragment)
+                encoder.setArgumentTable(table, stages: .vertex)
                 let draw = scene.draw
                 encoder.drawPrimitives(
                     primitiveType: draw.primitive, vertexStart: 0, vertexCount: draw.vertexCount)

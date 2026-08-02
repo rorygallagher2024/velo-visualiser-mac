@@ -84,7 +84,40 @@ final class AppModel {
         }
         return 0
     }()
-    var selectedDeviceUID: String?
+    /// Core Audio UID of the chosen input, or nil for the system default.
+    ///
+    /// Persisted so a rig comes back up on the same interface it was last
+    /// performing on. A UID that is missing at launch is kept rather than
+    /// cleared — an interface that is merely switched off should still be the
+    /// remembered choice when it is plugged back in — and `AudioEngine.open`
+    /// falls back to the default device in the meantime.
+    var selectedDeviceUID: String? {
+        didSet {
+            guard selectedDeviceUID != oldValue else { return }
+            UserDefaults.standard.set(selectedDeviceUID, forKey: Self.deviceUIDKey)
+            rememberDeviceName()
+        }
+    }
+
+    /// Friendly name of the remembered input, stored alongside the UID for the
+    /// one case that needs it: naming a device in the picker while it is
+    /// disconnected. A UID on its own is unreadable.
+    private(set) var selectedDeviceName: String?
+
+    static let deviceUIDKey = "velo_input_device_uid"
+    static let deviceNameKey = "velo_input_device_name"
+
+    private func rememberDeviceName() {
+        guard let uid = selectedDeviceUID else {
+            selectedDeviceName = nil
+            UserDefaults.standard.removeObject(forKey: Self.deviceNameKey)
+            return
+        }
+        guard let name = AudioEngine.inputDevices().first(where: { $0.uid == uid })?.name
+        else { return }   // Unknown device: keep the name we already had.
+        selectedDeviceName = name
+        UserDefaults.standard.set(name, forKey: Self.deviceNameKey)
+    }
 
     /// 4/4 Music Mode: grid-locks the beat to a steady four-to-the-floor
     /// signature. Persisted, default off. The renderer falls back to the
@@ -345,10 +378,17 @@ final class AppModel {
             self.favourites = saved.filter { $0 >= 0 && $0 < maxScene }
         }
 
+        // Assigned before start() so capture opens on the remembered input
+        // rather than the default and then switching a moment later.
+        // Assignment in init does not fire didSet, so this cannot write back
+        // the value it just read.
+        self.selectedDeviceUID = UserDefaults.standard.string(forKey: Self.deviceUIDKey)
+        self.selectedDeviceName = UserDefaults.standard.string(forKey: Self.deviceNameKey)
+
         HueCredentialStore.migrateFromKeychain()
         if ProcessInfo.processInfo.environment["VELO_SELFTEST"] != nil { SelfTest.run() }
         VeloLog.begin()
-        audio.start()
+        audio.start(deviceUID: selectedDeviceUID)
 
         filePlayer.onPlaybackStateChange = { [weak self] in
             guard let self else { return }

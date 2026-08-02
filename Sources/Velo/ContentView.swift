@@ -370,13 +370,7 @@ private struct ControlPanel: View {
 
                 section("Audio")
                 VStack(alignment: .leading, spacing: 6) {
-                    Picker("Input", selection: $model.selectedDeviceUID) {
-                        Text("System default").tag(String?.none)
-                        ForEach(devices) { device in
-                            Text(device.name).tag(String?.some(device.uid))
-                        }
-                    }
-                    .labelsHidden()
+                    AudioInputPicker(model: model, devices: devices)
                     .frame(width: 280)
                     .disabled(model.toneActive)
                     .opacity(model.toneActive ? 0.4 : 1)
@@ -818,6 +812,38 @@ private struct ControlPanel: View {
     }
 }
 
+/// Input-device picker, shared by the control panel and the lighting panel.
+///
+/// The remembered device gets a row even while it is unplugged. Without it the
+/// selection has no matching tag and the picker renders blank, which reads as
+/// "nothing is selected" when the truth is "your interface is not here yet" —
+/// and the choice is deliberately kept so it rebinds when the device returns.
+private struct AudioInputPicker: View {
+    @Bindable var model: AppModel
+    var devices: [AudioInputDevice]
+
+    private var rememberedButAbsent: String? {
+        guard let uid = model.selectedDeviceUID,
+              !devices.contains(where: { $0.uid == uid })
+        else { return nil }
+        return uid
+    }
+
+    var body: some View {
+        Picker("Input", selection: $model.selectedDeviceUID) {
+            Text("System default").tag(String?.none)
+            ForEach(devices) { device in
+                Text(device.name).tag(String?.some(device.uid))
+            }
+            if let uid = rememberedButAbsent {
+                Text("\(model.selectedDeviceName ?? "Remembered device") (unavailable)")
+                    .tag(String?.some(uid))
+            }
+        }
+        .labelsHidden()
+    }
+}
+
 /// Transport controls for local file playback. Shown inline in the Audio
 /// section of ControlPanel when a file is loaded.
 private struct FileTransportView: View {
@@ -967,14 +993,8 @@ private struct SyphonModePanel: View {
 
                     section("Audio")
                     VStack(alignment: .leading, spacing: 6) {
-                        Picker("Input", selection: $model.selectedDeviceUID) {
-                            Text("System default").tag(String?.none)
-                            ForEach(devices) { device in
-                                Text(device.name).tag(String?.some(device.uid))
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(maxWidth: 280)
+                        AudioInputPicker(model: model, devices: devices)
+                            .frame(maxWidth: 280)
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
