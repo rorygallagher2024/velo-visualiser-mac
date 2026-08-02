@@ -112,10 +112,30 @@ final class HueSetupManager: @unchecked Sendable {
         if let http = response as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 403 {
             throw HueSetupError.authFailed
         }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            VeloLog.write("hue", "listAreas HTTP \(http.statusCode) from \(creds.bridgeIp)")
+            throw HueSetupError.bridgeError("Bridge returned HTTP \(http.statusCode).")
+        }
 
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let arr = root["data"] as? [[String: Any]] else { return [] }
+        // An unreadable body is a failure, not an empty list. Returning []
+        // here is what let a broken bridge call surface to the user as
+        // "no Entertainment Areas configured", which sent them to the Hue app
+        // to create one they already had.
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            VeloLog.write("hue", "listAreas: response was not JSON (\(data.count) bytes)")
+            throw HueSetupError.bridgeError("Could not read the bridge's reply.")
+        }
+        if let errors = root["errors"] as? [[String: Any]], !errors.isEmpty {
+            let desc = errors.compactMap { $0["description"] as? String }.joined(separator: "; ")
+            VeloLog.write("hue", "listAreas bridge error: \(desc)")
+            throw HueSetupError.bridgeError(desc.isEmpty ? "Bridge reported an error." : desc)
+        }
+        guard let arr = root["data"] as? [[String: Any]] else {
+            VeloLog.write("hue", "listAreas: reply had no data array")
+            throw HueSetupError.bridgeError("Unexpected reply from the bridge.")
+        }
 
+        VeloLog.write("hue", "listAreas: \(arr.count) area(s) at \(creds.bridgeIp)")
         return arr.compactMap { obj -> HueEntertainmentArea? in
             guard let id = obj["id"] as? String else { return nil }
             let name = (obj["metadata"] as? [String: Any])?["name"] as? String ?? "Area"
@@ -128,6 +148,47 @@ final class HueSetupManager: @unchecked Sendable {
             let lightIds = lsArr.compactMap { $0["rid"] as? String }
             return HueEntertainmentArea(id: id, name: name, channels: channels, lightIds: lightIds)
         }
+    }
+
+    /// List areas, re-finding the bridge first if its stored address is stale.
+    ///
+    /// Bridges get their address by DHCP, so a router reboot or a lease expiry
+    /// can move one without anything else changing. The saved credentials stay
+    /// perfectly valid — they are just pointed at an address the bridge no
+    /// longer answers on — and every call fails at the transport layer. Before
+    /// this, that surfaced as "no Entertainment Areas configured", and the only
+    /// way out was to forget the bridge and pair again, which worked purely
+    /// because pairing re-runs discovery and rewrites the address.
+    ///
+    /// Returns the areas, plus updated credentials when the address moved so
+    /// the caller can persist them and stop paying the discovery cost.
+    func listAreasResolvingAddress(
+        _ creds: HueCredentials
+    ) async throws -> (areas: [HueEntertainmentArea], updated: HueCredentials?) {
+        do {
+            return (try await listAreas(creds), nil)
+        } catch let error as HueSetupError {
+            // An auth or protocol failure means we reached a bridge and it said
+            // no. Re-running discovery cannot help, so don't mask the real cause.
+            throw error
+        } catch {
+            VeloLog.write("hue", "listAreas failed at \(creds.bridgeIp) "
+                          + "(\(error.localizedDescription)) — rediscovering")
+        }
+
+        let found = await discoverBridges()
+        guard let moved = found.first(where: { $0.ip != creds.bridgeIp }) else {
+            VeloLog.write("hue", "rediscovery found no bridge at a new address")
+            throw HueSetupError.bridgeError(
+                "Could not reach the Hue bridge at \(creds.bridgeIp).")
+        }
+
+        let retry = HueCredentials(bridgeIp: moved.ip,
+                                   username: creds.username,
+                                   clientKey: creds.clientKey)
+        let areas = try await listAreas(retry)
+        VeloLog.write("hue", "bridge moved \(creds.bridgeIp) -> \(moved.ip)")
+        return (areas, retry)
     }
 
     // MARK: - Stream Control

@@ -173,6 +173,14 @@ final class CrtScopeScene: VeloScene {
                 cos(u.time * 0.27) + 0.5 * cos(u.time * 0.19 + 0.9)
             ) * 0.005;
 
+            // Square, always. X is left and Y is right, so both axes must share
+            // a scale or the drawing in the signal comes out distorted.
+            //
+            // 0.86 looks conservative but is close to the ceiling: the barrel
+            // below expands by (1 + 0.12 r²), which at a full-scale corner is
+            // 24%, so 0.86 already reaches 1.013 there. Raising the fill crops
+            // the corners of the artwork; the only way to gain real size is to
+            // soften the curvature, which is the whole look of this scene.
             float2 p;
             if (s.stereo > 0.5) {
                 p = float2(pos.x, pos.y);

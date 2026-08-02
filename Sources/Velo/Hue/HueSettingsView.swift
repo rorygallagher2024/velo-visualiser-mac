@@ -102,7 +102,10 @@ struct HueSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Entertainment areas
             if hue.areas.isEmpty {
-                Text("No Entertainment Areas configured.\nCreate one in the Hue app first.")
+                // Only reachable once the bridge has answered, so this now
+                // means what it says. A failed lookup lands in .error instead.
+                Text("The bridge reports no Entertainment Areas.\n"
+                     + "Create one in the Hue app, then reopen this panel.")
                     .font(Velo.light(13))
                     .foregroundStyle(.white.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
@@ -605,9 +608,16 @@ final class HueState: @unchecked Sendable {
         guard let creds = store.load(), let areaId = store.selectedAreaId else { return }
         Task {
             do {
-                let areas = try await controller.setup.listAreas(creds)
+                let (areas, updated) = try await controller.setup
+                    .listAreasResolvingAddress(creds)
+                if let updated { store.save(updated) }
                 guard let area = areas.first(where: { $0.id == areaId }) ?? areas.first else {
-                    await MainActor.run { phase = .error("Entertainment Area not found.") }
+                    // Reached the bridge and it really does have none.
+                    await MainActor.run {
+                        self.areas = areas
+                        phase = .error("The bridge has no Entertainment Area. "
+                                       + "Create one in the Hue app.")
+                    }
                     return
                 }
                 await MainActor.run { self.areas = areas }
@@ -626,14 +636,20 @@ final class HueState: @unchecked Sendable {
         guard let creds = store.load() else { return }
         Task {
             do {
-                let areas = try await controller.setup.listAreas(creds)
+                let (areas, updated) = try await controller.setup
+                    .listAreasResolvingAddress(creds)
+                if let updated { store.save(updated) }
                 await MainActor.run {
                     self.areas = areas
                     phase = .ready
                 }
             } catch {
+                // Going .ready with an empty list told the user they had no
+                // Entertainment Areas, when the truth was that we never managed
+                // to ask. Show what actually went wrong instead.
+                VeloLog.write("hue", "could not load areas: \(error.localizedDescription)")
                 await MainActor.run {
-                    phase = .ready
+                    phase = .error(error.localizedDescription)
                 }
             }
         }

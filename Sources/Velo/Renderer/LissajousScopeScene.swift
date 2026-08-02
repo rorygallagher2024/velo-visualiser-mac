@@ -140,9 +140,17 @@ final class LissajousScopeScene: VeloScene {
             ) * 0.005;
 
             float2 p = pos;
+            // Square, always. X is left and Y is right, so the two axes have to
+            // share a scale — stretching to fill a wide screen would turn every
+            // circle in the signal into an ellipse and misdraw the artwork that
+            // oscilloscope music exists to show. The bars either side are the
+            // cost of the picture being right.
             if (aspect > 1.0) p.x /= aspect;
             else               p.y *= aspect;
-            p *= 0.9;
+            // Fill that square nearly to the edge. Only the burn-in orbit needs
+            // headroom here; unlike the CRT scope there is no barrel expansion
+            // to leave room for.
+            p *= 0.98;
 
             VSOut out;
             out.position = float4(p + orbit, 0.0, 1.0);
