@@ -1,3 +1,5 @@
+import CoreGraphics
+import IOSurface
 import Metal
 import CSyphon
 
@@ -26,6 +28,8 @@ final class SyphonOutput: @unchecked Sendable {
     private(set) var offscreen: MTLTexture?
     private var offscreenWidth: Int = 0
     private var offscreenHeight: Int = 0
+    /// The surface that has already been tagged, so tagging happens once.
+    private var taggedSurface: IOSurfaceRef?
 
     init?(device: MTLDevice) {
         guard let queue = device.makeCommandQueue() else { return nil }
@@ -100,5 +104,36 @@ final class SyphonOutput: @unchecked Sendable {
             flipped: true
         )
         cb.commit()
+
+        tagColourSpace(on: server)
+    }
+
+    /// Declare the colour space the shared pixels are actually in.
+    ///
+    /// The scenes emit Display P3 — that is what the window's layer is tagged
+    /// as — but the shared surface carried no colour space at all, so a client
+    /// had nothing to go on and fell back to sRGB. The numbers are identical
+    /// either way; read through sRGB's narrower primaries they simply come out
+    /// less saturated, which is the slight loss of vibrancy seen in OBS.
+    ///
+    /// Whether a given client honours this is up to the client. It costs one
+    /// serialisation into the kernel, once per surface, and nothing if ignored.
+    private func tagColourSpace(on server: SyphonMetalServer) {
+        guard let texture = server.newFrameImage(),
+              let surface = texture.iosurface
+        else { return }
+
+        // Cheap identity check first: IOSurfaceSetValue serialises into the
+        // kernel, which the header explicitly calls expensive, so this must not
+        // run per frame.
+        if let tagged = taggedSurface, CFEqual(tagged, surface) { return }
+
+        guard let space = CGColorSpace(name: CGColorSpace.displayP3),
+              let plist = space.copyPropertyList()
+        else { return }
+
+        IOSurfaceSetValue(surface, kIOSurfaceColorSpace, plist)
+        taggedSurface = surface
+        VeloLog.write("syphon", "tagged shared surface as Display P3")
     }
 }
