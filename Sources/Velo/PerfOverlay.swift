@@ -53,7 +53,6 @@ struct PerfOverlay: View {
     let audio: AudioStatus
     let hdr: Bool
     var syphon: Bool = false
-    var toneActive: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -89,8 +88,9 @@ struct PerfOverlay: View {
             if syphon { row("syphon", "active") }
 
             divider()
-            row("input", toneActive ? "test tone" : audio.device, mono: false)
-            if !toneActive { row("format", audio.format) }
+            // audio.device already names the live source, injected or captured.
+            row("input", audio.device, mono: false)
+            row("format", audio.format)
             row("level", audio.silent ? "silent" : meter)
             if LinkSync.enabled {
                 let peers = LinkSync.statusPeers
@@ -106,7 +106,10 @@ struct PerfOverlay: View {
             }
         }
         .padding(14)
-        .frame(width: 296, alignment: .leading)
+        // Wide enough for the longest line this shows: a device name, or a
+        // format reading like "48000 Hz · 2 ch · 1.3ms latency". Fixed rather
+        // than fitted, so the panel does not resize as values change.
+        .frame(width: 344, alignment: .leading)
         .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.10), lineWidth: 1)

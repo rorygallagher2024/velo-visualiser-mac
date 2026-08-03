@@ -33,6 +33,8 @@ final class ToneGenerator {
         self.audioEngine = audioEngine
         audioEngine.stop()
         audioEngine.hasStereoSource = true
+        audioEngine.injectedSource = InjectedSource(
+            name: "test tone", sampleRate: sampleRate, channels: 2)
 
         let engine = AVAudioEngine()
         let format = AVAudioFormat(
@@ -107,6 +109,7 @@ final class ToneGenerator {
         avEngine = nil
         if let engine = audioEngine {
             engine.hasStereoSource = false
+            engine.injectedSource = nil
             engine.start()
             audioEngine = nil
         }

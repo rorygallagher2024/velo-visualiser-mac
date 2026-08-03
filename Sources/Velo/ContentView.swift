@@ -85,8 +85,7 @@ struct ContentView: View {
                     scene: SceneCatalog.names[model.sceneIndex],
                     audio: model.audioStatus,
                     hdr: model.hdrActive,
-                    syphon: model.syphonEnabled,
-                    toneActive: model.toneActive
+                    syphon: model.syphonEnabled
                 )
                 .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

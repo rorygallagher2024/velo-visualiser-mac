@@ -30,10 +30,28 @@ struct AudioStatus: Sendable, Equatable {
     var silent: Bool { level < 0.0005 }
 
     var format: String {
-        sampleRate == 0
-            ? "not capturing"
-            : "\(Int(sampleRate)) Hz · \(channels) ch · \(bufferFrames) fr"
+        guard sampleRate > 0 else { return "not capturing" }
+        let head = "\(Int(sampleRate)) Hz · \(channels) ch"
+        // The buffer is the device's callback size, and its only interesting
+        // property is the latency it implies — so say that rather than leaving
+        // a bare frame count to be decoded. Zero means nothing is coming from a
+        // device at all, and there is no buffer to report.
+        guard bufferFrames > 0 else { return head }
+        let ms = Double(bufferFrames) / sampleRate * 1000
+        return head + String(format: " · %.1fms latency", ms)
     }
+}
+
+/// What is feeding the ring when it is not the capture device.
+///
+/// The overlay used to special-case the test tone by hand and knew nothing about
+/// file playback, so a local file still reported the microphone and its buffer
+/// size. Describing the source here instead means every readout is right
+/// wherever it is shown.
+struct InjectedSource: Sendable, Equatable {
+    var name: String
+    var sampleRate: Double
+    var channels: Int
 }
 
 /// One selectable input. BlackHole, an interface, or the built-in mic all
@@ -87,6 +105,10 @@ final class AudioEngine: @unchecked Sendable {
     /// FilePlayer to the file's native rate so scenes and FFT use the
     /// correct timebase while the ring is being fed by file data.
     nonisolated(unsafe) var activeSampleRate: Double = 0
+
+    /// Set by whatever is injecting samples in place of the capture device, so
+    /// `status()` describes what is actually driving the visuals.
+    nonisolated(unsafe) var injectedSource: InjectedSource?
 
     // Preallocated capture scratch. The render callback used to allocate two
     // buffers per invocation on the real-time thread; malloc there can block on
@@ -479,6 +501,12 @@ final class AudioEngine: @unchecked Sendable {
     /// arriving at all", and RMS hides a sparse signal.
     func status() -> AudioStatus {
         var out = statusStorage
+        if let source = injectedSource {
+            out.device = source.name
+            out.sampleRate = source.sampleRate
+            out.channels = source.channels
+            out.bufferFrames = 0     // nothing is coming from a device buffer
+        }
         let w = writeIndex.load()
         let n = min(2048, ringCapacity)
         var peak: Float = 0

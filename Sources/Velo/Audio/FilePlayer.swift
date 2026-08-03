@@ -100,6 +100,10 @@ final class FilePlayer: @unchecked Sendable {
         audioEngine.stop()
         audioEngine.hasStereoSource = true
         audioEngine.activeSampleRate = fileSampleRate
+        audioEngine.injectedSource = InjectedSource(
+            name: url.lastPathComponent,
+            sampleRate: fileSampleRate,
+            channels: Int(audioFile.processingFormat.channelCount))
 
         let engine = AVAudioEngine()
         let outFormat = AVAudioFormat(
@@ -165,6 +169,7 @@ final class FilePlayer: @unchecked Sendable {
         if let engine = audioEngine {
             engine.hasStereoSource = false
             engine.activeSampleRate = 0
+            engine.injectedSource = nil
             engine.start()
             audioEngine = nil
         }
