@@ -67,9 +67,53 @@ final class AppModel {
         didSet { UserDefaults.standard.set(hdrEnabled, forKey: "velo_hdr") }
     }
 
-    var hdrAvailable: Bool {
+    /// Whether the display can show extended range in its *current* mode.
+    ///
+    /// Stored, and refreshed when the display configuration changes. As a
+    /// computed property reading `NSScreen` this could never invalidate under
+    /// observation, so the UI kept whatever it saw at launch. Switch a display
+    /// to a mode that cannot do HDR — 240 Hz, on a panel that only offers it at
+    /// 120 — and the switch stayed disabled in the ON position with no way to
+    /// clear it, while the layer stayed in `rgba16Float` extended range on a
+    /// display that cannot show it.
+    private(set) var hdrAvailable = AppModel.displaySupportsHDR()
+
+    static func displaySupportsHDR() -> Bool {
         guard let screen = NSScreen.main else { return false }
         return screen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1.01
+    }
+
+    /// What the canvas should actually do.
+    ///
+    /// `hdrEnabled` stays the user's *preference* and survives a display change,
+    /// so going back to a mode that can show HDR restores it without them having
+    /// to remember. This is what everything downstream reads.
+    ///
+    /// Excludes Syphon deliberately. The Syphon offscreen is `bgra8Unorm` and
+    /// cannot carry extended range, but the render pipelines are built for the
+    /// *layer's* format — so with HDR on the scene is drawn by an `rgba16Float`
+    /// pipeline into an 8-bit target, which is a format mismatch and undefined.
+    /// Excluding it here removes the mismatch without touching the render path.
+    var hdrActive: Bool { hdrEnabled && hdrAvailable && !syphonEnabled }
+
+    private var screenObserver: NSObjectProtocol?
+
+    private func observeDisplayChanges() {
+        // The notification block is @Sendable and this model is not, so the
+        // capture is spelled out. Delivery is on the main queue, which is where
+        // every other mutation of this model already happens, and the model
+        // lives for the process lifetime — so a strong capture is not a leak
+        // worth a weak dance here.
+        nonisolated(unsafe) let model = self
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { _ in
+            let now = AppModel.displaySupportsHDR()
+            guard now != model.hdrAvailable else { return }
+            model.hdrAvailable = now
+            VeloLog.write("display", "HDR capability is now \(now)")
+        }
     }
 
     /// Syphon output for OBS / other Syphon clients. Persisted.
@@ -403,6 +447,7 @@ final class AppModel {
         self.selectedDeviceUID = UserDefaults.standard.string(forKey: Self.deviceUIDKey)
         self.selectedDeviceName = UserDefaults.standard.string(forKey: Self.deviceNameKey)
 
+        observeDisplayChanges()
         HueCredentialStore.migrateFromKeychain()
         if ProcessInfo.processInfo.environment["VELO_SELFTEST"] != nil { SelfTest.run() }
         VeloLog.begin()

@@ -17,7 +17,7 @@ struct ContentView: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             MetalCanvasView(
-                hdrEnabled: model.hdrEnabled,
+                hdrEnabled: model.hdrActive,
                 syphonEnabled: model.syphonEnabled,
                 audio: model.audio,
                 onToggleMenu: {
@@ -84,7 +84,7 @@ struct ContentView: View {
                     snapshot: model.perf,
                     scene: SceneCatalog.names[model.sceneIndex],
                     audio: model.audioStatus,
-                    hdr: model.hdrEnabled,
+                    hdr: model.hdrActive,
                     syphon: model.syphonEnabled,
                     toneActive: model.toneActive
                 )
@@ -534,17 +534,25 @@ private struct ControlPanel: View {
                     // overrides the dimming SwiftUI would otherwise apply to a
                     // disabled control — so the switch has to be dimmed by
                     // hand or it reads as live but unresponsive.
-                    Toggle("HDR", isOn: $model.hdrEnabled)
+                    // Shows the EFFECTIVE state, writes the preference. Bound
+                    // to hdrEnabled directly, the switch sat on and disabled
+                    // after a display lost HDR, with no way to clear it.
+                    Toggle("HDR", isOn: Binding(
+                        get: { model.hdrActive },
+                        set: { model.hdrEnabled = $0 }))
                         .toggleStyle(.switch)
                         .disabled(!model.hdrAvailable)
                         .opacity(model.hdrAvailable ? 1 : 0.4)
                     if model.hdrAvailable {
                         caption("Brighter highlights, on displays that can show them.")
-                        if let warning = Self.headroomWarning(hdrOn: model.hdrEnabled) {
+                        if let warning = Self.headroomWarning(hdrOn: model.hdrActive) {
                             caption(warning)
                         }
                     } else {
-                        caption("This display does not support HDR.")
+                        caption(model.hdrEnabled
+                                ? "This display mode does not support HDR. Your "
+                                  + "choice is remembered for when it does."
+                                : "This display does not support HDR.")
                     }
                 }
 
