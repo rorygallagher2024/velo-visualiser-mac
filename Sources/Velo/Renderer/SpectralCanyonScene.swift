@@ -31,6 +31,31 @@ final class SpectralCanyonScene: VeloScene {
 
     private var scrollAccum: Float = 0
     private static let scrollRate: Float = 18.0
+
+    // Downward-only level normalisation.
+    //
+    // Nothing here scaled the input, so how bright the canyon burned depended
+    // entirely on how hot the source was. `currentBins()` is dB-normalised over
+    // -88...-12 dBFS, which means a loopback device carrying music sits near
+    // 1.0 where a microphone in a room sits near 0.3 — and the two brightness
+    // multipliers below both scale with height, so the total went from about
+    // x2.1 to x5.3. At that point the magenta ridge colour is already near 1.0
+    // and everything clips to white.
+    //
+    // Attenuating the source does not help, which is worth knowing: on this
+    // scale -6 dBFS is still 1.0 and even -20 dBFS is 0.89. It is a display
+    // scaling problem, not a gain problem.
+    //
+    // So a hot source is brought DOWN to the level a loud room already reaches,
+    // and the gain is clamped at 1.0 so a microphone is never touched — mic
+    // behaviour was right and must not change. A single scalar preserves the
+    // relative shape of the spectrum, so peaks keep their definition.
+    private static let levelTarget: Float = 0.45
+    private static let ceilUpPerSec: Float = 2.5
+    private static let ceilDownPerSec: Float = 0.2
+    private var ceiling: Float = levelTarget
+    private var levelGain: Float = 1.0
+    private var scaled = [Float](repeating: 0, count: bins)
     private let maxCommits = 4
     private var head: Int = 0
     private var writeRow: Int = 0
@@ -52,13 +77,27 @@ final class SpectralCanyonScene: VeloScene {
 
         energy.update(bands: audio.currentBands(), dt: dt)
 
+        // Follow the loudest bin, then scale down to target if it is over.
+        // Rates are per second so this behaves the same at 60 and 240 Hz.
+        var framePeak: Float = 0
+        for v in binData { framePeak = max(framePeak, v) }
+        let ceilRate = framePeak > ceiling
+            ? min(Self.ceilUpPerSec * dt, 1)
+            : min(Self.ceilDownPerSec * dt, 1)
+        ceiling += (framePeak - ceiling) * ceilRate
+        levelGain = min(Self.levelTarget / max(ceiling, 0.05), 1.0)
+
+        for i in 0..<Self.bins {
+            scaled[i] = binData[i] * levelGain
+        }
+
         let peakDecay: Float = 1.0 - min(dt * 1.8, 1.0)
         for i in 0..<Self.bins {
-            peakBuffer[i] = max(peakBuffer[i] * peakDecay, binData[i])
+            peakBuffer[i] = max(peakBuffer[i] * peakDecay, scaled[i])
         }
 
         scrollAccum += dt * Self.scrollRate
-        commitHistoryRows(binData: binData, history: history)
+        commitHistoryRows(binData: scaled, history: history)
     }
 
     private func commitHistoryRows(binData: [Float], history: MTLBuffer) {
