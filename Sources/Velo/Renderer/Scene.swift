@@ -97,7 +97,28 @@ extension VeloScene {
             float  tintG;
             float  tintB;
             float  mixAlpha;
+            float  rec709;
         };
+
+        // Display P3 to Rec.709, for a frame headed somewhere that expects
+        // Rec.709 — which is what a Syphon client feeding an OBS NV12 recording
+        // does. Without it the P3 numbers are read through Rec.709's narrower
+        // primaries and everything lands a little desaturated.
+        //
+        // Gamut conversion belongs in linear light, and the cheap squared /
+        // square-root pair is used for that rather than an exact 2.2 transfer.
+        // Six pow() calls per pixel at 8.3 megapixels is a cost worth avoiding,
+        // and since the matrix is close to identity the error from gamma 2.0
+        // against 2.2 is second-order — far smaller than the desaturation being
+        // corrected.
+        static inline float3 p3ToRec709(float3 c) {
+            float3 lin = c * c;
+            float3 out709 = float3(
+                dot(lin, float3( 1.2249, -0.2247,  0.0000)),
+                dot(lin, float3(-0.0420,  1.0419,  0.0000)),
+                dot(lin, float3(-0.0197, -0.0786,  1.0983)));
+            return sqrt(max(out709, 0.0));
+        }
 
         static inline float3 themeGrade(float3 col, constant Uniforms &u) {
             float luma = dot(col, float3(0.2126, 0.7152, 0.0722));
@@ -107,7 +128,11 @@ extension VeloScene {
             col = col * cosA + cross(k, col) * sin(u.hueShift)
                 + k * dot(k, col) * (1.0 - cosA);
             col *= float3(u.tintR, u.tintG, u.tintB);
-            return max(col, 0.0);
+            col = max(col, 0.0);
+            // Branch rather than mix: with Syphon off this costs one compare and
+            // the conversion never runs.
+            if (u.rec709 > 0.5) col = p3ToRec709(col);
+            return col;
         }
         """
     }

@@ -110,14 +110,11 @@ final class SyphonOutput: @unchecked Sendable {
 
     /// Declare the colour space the shared pixels are actually in.
     ///
-    /// The scenes emit Display P3 — that is what the window's layer is tagged
-    /// as — but the shared surface carried no colour space at all, so a client
-    /// had nothing to go on and fell back to sRGB. The numbers are identical
-    /// either way; read through sRGB's narrower primaries they simply come out
-    /// less saturated, which is the slight loss of vibrancy seen in OBS.
-    ///
-    /// Whether a given client honours this is up to the client. It costs one
-    /// serialisation into the kernel, once per surface, and nothing if ignored.
+    /// Now sRGB, not Display P3, because the shaders convert to Rec.709 while
+    /// Syphon is running — sRGB and Rec.709 share primaries, so this is the
+    /// right thing to declare. Tagging alone was tried first and did not restore
+    /// the lost vibrancy, which suggests the client ignores the attachment; the
+    /// tag stays because it is correct and free for any client that does read it.
     private func tagColourSpace(on server: SyphonMetalServer) {
         guard let texture = server.newFrameImage(),
               let surface = texture.iosurface
@@ -128,12 +125,12 @@ final class SyphonOutput: @unchecked Sendable {
         // run per frame.
         if let tagged = taggedSurface, CFEqual(tagged, surface) { return }
 
-        guard let space = CGColorSpace(name: CGColorSpace.displayP3),
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let plist = space.copyPropertyList()
         else { return }
 
         IOSurfaceSetValue(surface, kIOSurfaceColorSpace, plist)
         taggedSurface = surface
-        VeloLog.write("syphon", "tagged shared surface as Display P3")
+        VeloLog.write("syphon", "tagged shared surface as sRGB / Rec.709")
     }
 }

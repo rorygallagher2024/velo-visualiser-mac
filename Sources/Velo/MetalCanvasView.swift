@@ -172,6 +172,9 @@ final class MetalCanvasNSView: NSView {
             applySyphonState()
             loop?.headless = syphonEnabled
             applyPresentationPacing()
+            // The layer's colour space depends on this now: the shaders emit
+            // Rec.709 while Syphon runs, so the tag has to follow.
+            applyColorConfiguration()
         }
     }
 
@@ -343,9 +346,20 @@ final class MetalCanvasNSView: NSView {
         // be linear light. 0.5 then displays at about 0.73, every midtone lifts
         // and the image washes out while the highlights it was supposed to buy
         // disappear into the general brightening.
-        metalLayer.colorspace = CGColorSpace(
-            name: hdrEnabled ? CGColorSpace.extendedDisplayP3 : CGColorSpace.displayP3
-        )
+        // While Syphon is running the shaders convert to Rec.709 on the way out,
+        // because that is what the client feeds. The window blits from that same
+        // texture, so it has to be told the values are Rec.709 too — tagged P3
+        // they would read over-saturated. The upshot is that streaming shows you
+        // what your audience gets, and switching Syphon off restores full P3.
+        let space: CFString
+        if hdrEnabled {
+            space = CGColorSpace.extendedDisplayP3
+        } else if syphonEnabled {
+            space = CGColorSpace.sRGB
+        } else {
+            space = CGColorSpace.displayP3
+        }
+        metalLayer.colorspace = CGColorSpace(name: space)
         renderer?.buildPipeline(for: format)
         if hdrEnabled { reportHeadroom() }
     }

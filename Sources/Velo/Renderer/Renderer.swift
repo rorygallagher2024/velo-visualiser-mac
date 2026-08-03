@@ -15,6 +15,9 @@ struct Uniforms {
     var tintG: Float = 1
     var tintB: Float = 1
     var mixAlpha: Float = 1
+    /// 1 when the frame is bound for a Rec.709 consumer, so `themeGrade`
+    /// converts out of Display P3. Set only while Syphon is running.
+    var rec709: Float = 0
 }
 
 /// The Metal 4 renderer.
@@ -593,7 +596,10 @@ final class Renderer: @unchecked Sendable {
             tintR: theme.tintR,
             tintG: theme.tintG,
             tintB: theme.tintB,
-            mixAlpha: transitionProgress
+            mixAlpha: transitionProgress,
+            // Syphon shares this exact texture with a Rec.709 consumer, so the
+            // frame is converted on the way out rather than left in P3.
+            rec709: syphonActive ? 1 : 0
         )
         uniformBuffers[slot].contents()
             .copyMemory(from: &uniforms, byteCount: MemoryLayout<Uniforms>.stride)
@@ -816,7 +822,8 @@ final class Renderer: @unchecked Sendable {
             time: time, dim: 1,
             hueShift: theme.hueShift, saturation: theme.saturation,
             tintR: theme.tintR, tintG: theme.tintG, tintB: theme.tintB,
-            mixAlpha: transitionProgress)
+            mixAlpha: transitionProgress,
+            rec709: 1)   // headless mode exists only to feed Syphon
         uniformBuffers[slot].contents()
             .copyMemory(from: &uniforms, byteCount: MemoryLayout<Uniforms>.stride)
             
