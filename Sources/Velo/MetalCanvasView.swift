@@ -25,6 +25,7 @@ private final class RenderLoop: @unchecked Sendable {
     private var capHz: Double = 0      // 0 = uncapped (present at vsync)
     private var pendingSize: CGSize?
     private var _headless = false
+    private var _syphonCapped = false
 
     /// Drawable size, applied by the render thread.
     ///
@@ -54,6 +55,19 @@ private final class RenderLoop: @unchecked Sendable {
         set { lock.lock(); _headless = newValue; lock.unlock() }
     }
 
+    /// Hold the loop to 60 while Syphon is feeding a client.
+    ///
+    /// OBS runs at 60, so frames beyond that are re-read or discarded rather
+    /// than shown — and pushing a 120 Hz producer at a 60 Hz consumer is what
+    /// makes a shared texture look torn. Capping the producer is the cheap fix,
+    /// and it takes the place of the global vsync gate that was reinstated to
+    /// solve the same complaint at the cost of 40 fps everywhere.
+    var syphonCapped: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _syphonCapped }
+        set { lock.lock(); _syphonCapped = newValue; lock.unlock() }
+    }
+    private static let syphonHz: Double = 60
+
     init(renderer: Renderer, layer: CAMetalLayer, audio: AudioEngine) {
         self.renderer = renderer
         self.layer = layer
@@ -77,7 +91,15 @@ private final class RenderLoop: @unchecked Sendable {
             while isRunning {
                 autoreleasepool {
                     let isHeadless = headless
-                    let cap = isHeadless ? max(frameCap, 60) : frameCap
+                    // Syphon feeds a 60 Hz consumer, so cap there whether or
+                    // not the window is also drawing. Otherwise honour the
+                    // user's setting, uncapped included.
+                    let cap: Double
+                    if isHeadless || syphonCapped {
+                        cap = Self.syphonHz
+                    } else {
+                        cap = frameCap
+                    }
                     if cap > 0 {
                         let interval = 1.0 / cap
                         let now = CACurrentMediaTime()
@@ -149,6 +171,7 @@ final class MetalCanvasNSView: NSView {
         didSet {
             applySyphonState()
             loop?.headless = syphonEnabled
+            applyPresentationPacing()
         }
     }
 
@@ -289,9 +312,9 @@ final class MetalCanvasNSView: NSView {
         metalLayer.isOpaque = true
         metalLayer.presentsWithTransaction = false
         // Enabled by default for windowed mode, where it gives precise vsync
-        // pacing. Disabled when entering a fullscreen Space — see
-        // fullScreenDidChange() for why.
-        metalLayer.displaySyncEnabled = true
+        // pacing. Recomputed on every fullscreen and Syphon change — see
+        // applyPresentationPacing().
+        applyPresentationPacing()
         applyColorConfiguration()
         renderer = Renderer(device: device)
         renderer?.transitionsEnabled = transitionsEnabled
@@ -388,6 +411,7 @@ final class MetalCanvasNSView: NSView {
         }
         loop.frameCap = frameCap
         loop.headless = syphonEnabled
+        loop.syphonCapped = syphonEnabled
         loop.start()
         self.loop = loop
 
@@ -403,13 +427,37 @@ final class MetalCanvasNSView: NSView {
 
     // MARK: - Fullscreen
     //
-    // Native macOS fullscreen (a Space). displaySyncEnabled stays on in both
-    // modes — disabling it removes the vsync gate and causes visible tearing.
-    // The display link's preferredFrameRateRange tells the VRR system what
-    // rate we need, which prevents the throttle the disable was working around.
+    // Native macOS fullscreen (a Space), and nothing else. A borderless window
+    // covering the screen is not fullscreen — it still has a border and it is
+    // still an ordinary composited window.
+    //
+    // The vsync gate is decided by applyPresentationPacing(), not fixed here.
 
     var isFullScreen: Bool {
         window?.styleMask.contains(.fullScreen) ?? false
+    }
+
+    /// Decide the vsync gate and the frame cap together, because the two
+    /// requirements pull in opposite directions and were previously conflated.
+    ///
+    /// **Fullscreen wants no gate.** In a Space the display holds each presented
+    /// drawable for three vsync periods, so a vsync-gated Space measures exactly
+    /// (N - 1) x 40 fps — 80 at the three drawables `CAMetalLayer` allows, and
+    /// there is no fourth. Turning the gate off is the only way past that, and
+    /// it is where the full panel rate came from.
+    ///
+    /// **Syphon wants a gate, and 60.** The tearing that prompted the gate being
+    /// switched back on was in the Syphon feed, not on the display, and the fix
+    /// for it belongs where it happens: the offscreen texture, the barrier before
+    /// the blit reads it, and publishing from the commit feedback handler. What
+    /// Syphon additionally needs is to match its consumer, and OBS runs at 60.
+    /// Restoring the gate globally to solve that cost 40 fps everywhere.
+    private func applyPresentationPacing() {
+        let syphon = syphonEnabled
+        // Gate off only when nothing is being fed downstream and we own the
+        // display outright.
+        metalLayer.displaySyncEnabled = syphon || !isFullScreen
+        loop?.syphonCapped = syphon
     }
 
     func toggleFullScreen() {
@@ -438,6 +486,7 @@ final class MetalCanvasNSView: NSView {
         window.titlebarAppearsTransparent = true
         if isFullScreen { NSApp.activate() }
         window.makeFirstResponder(self)
+        applyPresentationPacing()
         requestRefreshRate()
         updateDrawableSize()
     }

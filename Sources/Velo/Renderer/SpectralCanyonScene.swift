@@ -232,12 +232,21 @@ final class SpectralCanyonScene: VeloScene {
                        * mix(float3(1.10, 0.90, 1.00), float3(0.85, 1.00, 1.18), fx);
             col *= 0.45 + mag * 1.8;
 
-            // Peak caps flare on the beat.
-            float cap = smoothstep(0.18, 0.6, peak);
-            col += float3(1.10, 1.15, 1.35) * cap * (0.6 + s.beatEnv * 2.0);
-
             col *= fade;
             col *= 1.5 + mag * 2.2;
+
+            // Peak caps flare on the beat — added *after* the terrain gain.
+            // Before, the flare went in first and was then multiplied by
+            // (1.5 + mag * 2.2), so a bright ridge amplified it as well: at a
+            // full beat the additive white reached about 13, which is what
+            // washed the canyon out on anything loud. Added last it stays near
+            // 1.4, a highlight on an HDR surface rather than a flood.
+            //
+            // The threshold is also higher. Peaks are knee-compressed before
+            // they get here, so they bunch up around 0.5-0.75, and a window
+            // starting at 0.18 meant nearly every ridge capped out at once.
+            float cap = smoothstep(0.30, 0.80, peak);
+            col += float3(0.82, 0.88, 1.05) * cap * (0.35 + s.beatEnv * 0.95) * fade;
 
             // Combine fill (dim, ridges only) and wireframe (full strength).
             float fillAlpha = 0.2 * smoothstep(0.0, 0.18, mag) * fade;

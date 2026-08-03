@@ -216,6 +216,24 @@ final class AppModel {
         }
     }
 
+    /// Start or stop one brand's light sync, from a MIDI control.
+    ///
+    /// Routed through the same entry points the settings panels use, so a pad
+    /// and the on-screen switch cannot end up in different states. Each brand
+    /// silently declines if it has nothing paired or selected, which is the
+    /// behaviour wanted mid-set: a stray pad press does nothing rather than
+    /// throwing an error over the visuals.
+    func toggleLightSync(_ brand: MidiController.LightBrandAction) {
+        switch brand {
+        case .hue:
+            if hue.phase == .streaming { hue.stopStreaming() } else { hue.resumeStreaming() }
+        case .lifx:
+            if lifx.syncing { lifx.stopSync() } else { lifx.startSync() }
+        case .nanoleaf:
+            if nanoleaf.phase == .streaming { nanoleaf.stopSync() } else { nanoleaf.startSync() }
+        }
+    }
+
     /// The scene a numbered slot recalls. With favourites saved, the slots are
     /// the favourites; with none saved they fall through to the catalogue in
     /// order. Shared by the number keys and the MIDI favourite mappings so both
@@ -406,6 +424,8 @@ final class AppModel {
                 sceneIndex = (sceneIndex + 1) % count
             case .favourite(let slot):
                 if let target = sceneForSlot(slot) { sceneIndex = target }
+            case .toggleLights(let brand):
+                toggleLightSync(brand)
             }
         }
     }

@@ -716,6 +716,10 @@ private struct ControlPanel: View {
 
                 Divider().background(Color.white.opacity(0.1)).padding(.vertical, 4)
 
+                midiLightsView
+
+                Divider().background(Color.white.opacity(0.1)).padding(.vertical, 4)
+
                 HStack {
                     Text("Listen on Channel")
                         .font(Velo.label(13))
@@ -750,6 +754,28 @@ private struct ControlPanel: View {
                     ? "No favourites saved yet — the slots follow the visual list "
                       + "in order. Star visuals in the picker (V) to choose them."
                     : "The same ten slots the number keys reach.")
+        }
+    }
+
+    private var midiLightsView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("LIGHT SYNC")
+                .font(Velo.label(10))
+                .tracking(2.0)
+                .foregroundStyle(.white.opacity(0.3))
+
+            ForEach(MidiController.LightBrandAction.allCases, id: \.self) { brand in
+                HStack(spacing: 8) {
+                    Text(brand.label)
+                        .font(Velo.light(13))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 74, alignment: .leading)
+                    midiBinding(for: .toggleLights(brand), width: 84)
+                }
+            }
+
+            caption("Starts or stops that brand's light sync. A brand with "
+                    + "nothing paired ignores the control.")
         }
     }
 

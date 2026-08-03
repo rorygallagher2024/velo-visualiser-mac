@@ -166,29 +166,56 @@ engine and then again by the scene.
 
 Apple Silicon and macOS 26 or newer.
 
-## First launch
+## Installing
 
-macOS will block the app the first time you open it because it is not signed
-with an Apple Developer certificate. This is normal for open-source software
-distributed outside the App Store. The app is safe to run, and the full source
-code is available in this repository.
+Velo is signed ad hoc rather than with a paid Apple Developer certificate, so a
+browser download triggers a Gatekeeper warning. Two of the three routes below
+avoid it entirely.
 
-To open it:
+The warning is caused by the `com.apple.quarantine` flag, and that flag is set
+by **your browser**, not by macOS. Get the app any other way and there is
+nothing to clear.
 
-1. Double-click the app. macOS will block it and show a warning.
-2. Open **System Settings > Privacy & Security**.
-3. Scroll down to the Security section. You will see a message that the app
-   was blocked. Click **Open Anyway**.
-4. macOS will ask for confirmation. Click **Open**.
-
-You only need to do this once. After the first launch macOS remembers your
-choice and the app opens normally from then on.
-
-Alternatively, you can remove the quarantine attribute from the terminal:
+### Download from the terminal — no warning
 
 ```bash
-xattr -d com.apple.quarantine "Velo Visualiser.app"
+curl -L -o velo.zip https://github.com/rorygallagher2024/velo-visualiser-mac/releases/latest/download/velo-visualiser-mac.zip
+ditto -x -k velo.zip /Applications
 ```
+
+Use `ditto`, not `unzip`. The archive is made with `ditto`, and plain `unzip`
+does not restore the bundle metadata it stores — the app still launches but its
+code signature no longer validates, which is not a state you want an app that
+asks for microphone and local-network access to be in.
+
+### Build it yourself — no warning
+
+See [Building from Source](#building-from-source). A locally built app is never
+quarantined, so it opens straight away.
+
+### Download in a browser — one warning, once
+
+Either use **System Settings > Privacy & Security**, scroll to the Security
+section, and click **Open Anyway** next to the message about Velo Visualiser —
+macOS remembers the choice from then on.
+
+Or clear the flag yourself, which needs no admin password:
+
+```bash
+xattr -d com.apple.quarantine "/Applications/Velo Visualiser.app"
+```
+
+That command deliberately removes a macOS security check, so only run it on
+software you trust. Every line of this app is in this repository, and you can
+always take the build-it-yourself route instead.
+
+## First launch
+
+The app asks for microphone access on first run. Core Audio input is gated by
+privacy consent even when the device is a loopback like BlackHole, so this is
+required. Velo is not listening unless you pick an input.
+
+If you use the Hue integration, macOS will also ask for Local Network access.
 
 ## Building from Source
 

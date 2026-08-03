@@ -17,11 +17,26 @@ final class MidiController: @unchecked Sendable {
     /// Number of favourite-recall slots, matching the 1–9/0 number-key row.
     static let favouriteSlots = 10
 
+    /// A lighting brand whose sync can be toggled from a controller.
+    enum LightBrandAction: String, Codable, Equatable, Hashable, CaseIterable {
+        case hue, lifx, nanoleaf
+
+        var label: String {
+            switch self {
+            case .hue: return "Hue"
+            case .lifx: return "LIFX"
+            case .nanoleaf: return "Nanoleaf"
+            }
+        }
+    }
+
     enum Action: Codable, Equatable, Hashable {
         case previousVisual
         case nextVisual
         /// Recall favourite slot `index` (0-based; slot 0 is the "1" key).
         case favourite(Int)
+        /// Start or stop one brand's light sync.
+        case toggleLights(LightBrandAction)
     }
 
     struct Mapping: Codable, Equatable {
@@ -29,13 +44,18 @@ final class MidiController: @unchecked Sendable {
         var nextVisual: MidiTrigger?
         /// One trigger per favourite slot; always `favouriteSlots` long.
         var favourites: [MidiTrigger?]
+        /// One trigger per lighting brand, keyed by its raw value so adding a
+        /// brand later cannot shift the meaning of what is already saved.
+        var lights: [String: MidiTrigger]
 
         init(previousVisual: MidiTrigger? = nil,
              nextVisual: MidiTrigger? = nil,
-             favourites: [MidiTrigger?] = []) {
+             favourites: [MidiTrigger?] = [],
+             lights: [String: MidiTrigger] = [:]) {
             self.previousVisual = previousVisual
             self.nextVisual = nextVisual
             self.favourites = Self.padded(favourites)
+            self.lights = lights
         }
 
         init(from decoder: Decoder) throws {
@@ -45,6 +65,7 @@ final class MidiController: @unchecked Sendable {
             // Mappings saved before the favourite slots existed have no such key.
             let saved = try c.decodeIfPresent([MidiTrigger?].self, forKey: .favourites) ?? []
             favourites = Self.padded(saved)
+            lights = try c.decodeIfPresent([String: MidiTrigger].self, forKey: .lights) ?? [:]
         }
 
         /// Trim or pad so the array is always exactly `favouriteSlots` long —
@@ -63,6 +84,7 @@ final class MidiController: @unchecked Sendable {
                 case .nextVisual: return nextVisual
                 case .favourite(let i):
                     return favourites.indices.contains(i) ? favourites[i] : nil
+                case .toggleLights(let brand): return lights[brand.rawValue]
                 }
             }
             set {
@@ -72,6 +94,7 @@ final class MidiController: @unchecked Sendable {
                 case .favourite(let i):
                     guard favourites.indices.contains(i) else { return }
                     favourites[i] = newValue
+                case .toggleLights(let brand): lights[brand.rawValue] = newValue
                 }
             }
         }
@@ -81,6 +104,9 @@ final class MidiController: @unchecked Sendable {
             if trigger == previousVisual { return .previousVisual }
             if trigger == nextVisual { return .nextVisual }
             if let i = favourites.firstIndex(of: trigger) { return .favourite(i) }
+            for brand in LightBrandAction.allCases where lights[brand.rawValue] == trigger {
+                return .toggleLights(brand)
+            }
             return nil
         }
 
@@ -91,6 +117,7 @@ final class MidiController: @unchecked Sendable {
             for i in favourites.indices where favourites[i] == trigger {
                 favourites[i] = nil
             }
+            for (k, v) in lights where v == trigger { lights[k] = nil }
         }
     }
 
