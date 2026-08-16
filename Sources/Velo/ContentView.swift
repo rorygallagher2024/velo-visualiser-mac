@@ -1125,8 +1125,6 @@ private struct SyphonModePanel: View {
 private struct VisualPickerPanel: View {
     @Bindable var model: AppModel
 
-    private static let split = SceneCatalog.generativeStart
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(SceneCatalog.names[model.sceneIndex])
@@ -1163,7 +1161,7 @@ private struct VisualPickerPanel: View {
                     sectionWhisper("Instruments")
                         .padding(.bottom, 10)
 
-                    ForEach(0..<Self.split, id: \.self) { i in
+                    ForEach(SceneCatalog.instrumentIndices, id: \.self) { i in
                         visualRow(i)
                     }
 
@@ -1174,7 +1172,18 @@ private struct VisualPickerPanel: View {
                     sectionWhisper("Generative")
                         .padding(.bottom, 10)
 
-                    ForEach(Self.split..<SceneCatalog.names.count, id: \.self) { i in
+                    ForEach(SceneCatalog.generativeIndices, id: \.self) { i in
+                        visualRow(i)
+                    }
+
+                    Divider()
+                        .overlay(.white.opacity(0.06))
+                        .padding(.vertical, 16)
+
+                    sectionWhisper("Overlays")
+                        .padding(.bottom, 10)
+
+                    ForEach(SceneCatalog.overlayIndices, id: \.self) { i in
                         visualRow(i)
                     }
                 }

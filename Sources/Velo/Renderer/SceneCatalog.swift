@@ -8,6 +8,47 @@ import Foundation
 enum SceneCatalog {
     static let generativeStart = 16
 
+    /// Visuals that read well composited over a camera feed.
+    ///
+    /// Keyed by NAME rather than by index, and the catalogue order is left
+    /// alone. `AppModel.favourites` persists scene *indices*, and the MIDI slot
+    /// mappings resolve through it, so reordering this list would silently point
+    /// somebody's saved favourites and pads at different visuals.
+    ///
+    /// What earns a place: mostly black, so a Screen or Add blend in OBS leaves
+    /// the footage visible; sparse or edge-weighted, so it does not sit on the
+    /// subject's face; and calm enough to decorate rather than compete. That
+    /// last one is why the busiest generative scenes are not here even though
+    /// they composite cleanly.
+    static let overlayNames: Set<String> = [
+        "Lattice",
+        "Starscape",
+        "Deep Field",
+        "Prism Field",
+        "Colour Wash",
+        "Light Leak",
+        "Motes",
+        "Laser Array",
+        "Corner Bloom",
+        "Beat Fireworks",
+        "Chromatic Dots",
+        "Chromatic Frame",
+        "Edge Equaliser",
+        "Edge Waveform",
+    ]
+
+    /// Indices of the overlay visuals, in catalogue order.
+    static let overlayIndices: [Int] =
+        names.indices.filter { overlayNames.contains(names[$0]) }
+
+    /// The other two groups, with the overlays lifted out so nothing is listed
+    /// twice.
+    static let instrumentIndices: [Int] =
+        (0..<generativeStart).filter { !overlayNames.contains(names[$0]) }
+
+    static let generativeIndices: [Int] =
+        (generativeStart..<names.count).filter { !overlayNames.contains(names[$0]) }
+
     static let names = [
         // Instruments: honest readouts of the signal.
         "Level Meter",
@@ -39,6 +80,9 @@ enum SceneCatalog {
         "Nebula",
         "Deep Field",
         "Prism Field",
+        "Colour Wash",
+        "Light Leak",
+        "Motes",
         "Phyllotaxis Bloom",
         "Corner Bloom",
         "Beat Fireworks",
@@ -91,6 +135,9 @@ enum SceneCatalog {
             NebulaScene(),
             DeepFieldScene(),
             PrismFieldScene(),
+            ColourWashScene(),
+            LightLeakScene(),
+            MotesScene(),
             PhyllotaxisScene(),
             PhyllotaxisCornersScene(),
             BeatFireworksScene(),
