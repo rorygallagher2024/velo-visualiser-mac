@@ -458,6 +458,19 @@ final class AppModel {
         VeloLog.begin()
         audio.start(deviceUID: selectedDeviceUID)
 
+        // Start playing a file immediately. Exists so the file-injection path —
+        // which is what a loopback device like BlackHole looks like to the
+        // scenes, a clean full-scale signal with no room noise in it — can be
+        // exercised without driving the UI. Every level-related bug this session
+        // behaved differently on that path than on a microphone.
+        if let path = ProcessInfo.processInfo.environment["VELO_FILE"] {
+            let url = URL(fileURLWithPath: path)
+            nonisolated(unsafe) let model = self
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                model.startFilePlayback(url: url)
+            }
+        }
+
         filePlayer.onPlaybackStateChange = { [weak self] in
             guard let self else { return }
             self.playbackActive = self.filePlayer.isPlaying

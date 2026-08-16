@@ -105,7 +105,11 @@ final class TopographicRidgeScene: VeloScene {
     /// one quiet bar does not re-range the whole landscape.
     private static let ceilUpPerSec: Float = 3.0
     private static let ceilDownPerSec: Float = 0.25
-    private static let ceilSeed: Float = 0.55
+    /// In signal-above-floor units, matching what `ceiling` now tracks. The old
+    /// 0.55 was a raw bin level, which in these units is roughly 0.12 — leaving
+    /// it would have started the window four times too wide and flattened the
+    /// first seconds after launch.
+    private static let ceilSeed: Float = 0.12
 
     /// Narrowest usable window, about 23 dB. This is what silence collapses to,
     /// and it is deliberately set to reproduce the fixed span this replaced —
@@ -123,6 +127,9 @@ final class TopographicRidgeScene: VeloScene {
     /// This frame's resolved column values, kept so the window's ends can be
     /// settled before anything is mapped through them.
     private var raw = [Float](repeating: 0, count: cols)
+    /// This frame's signal above each column's own floor — the quantity both
+    /// ends of the window are measured in.
+    private var above = [Float](repeating: 0, count: cols)
     private var ceiling: Float = ceilSeed
     /// Resolved once. This runs on the render thread, and today's session lost
     /// two debugging rounds to a path that recorded nothing, so the hook stays —
@@ -165,7 +172,6 @@ final class TopographicRidgeScene: VeloScene {
         // Pass one: resolve each column, learn its floor, and find the loudest
         // column so the window's upper end can follow it.
         var framePeak: Float = 0
-        var floorSum: Float = 0
         for i in 0..<Self.cols {
             let x = Float(i) * perCol
             let i0 = min(Int(x), bins.count - 1)
@@ -184,8 +190,11 @@ final class TopographicRidgeScene: VeloScene {
                 : (value > noiseFloor[i] ? floorUp : floorDown)
             noiseFloor[i] += (value - noiseFloor[i]) * rate
 
-            framePeak = max(framePeak, value)
-            floorSum += noiseFloor[i]
+            // Track the peak of what the mapping actually divides: the
+            // signal ABOVE this column's own floor. Using the raw peak here
+            // made the window's two ends disagree — see below.
+            above[i] = max(value - noiseFloor[i] - Self.floorHeadroom, 0)
+            framePeak = max(framePeak, above[i])
         }
 
         let ceilRate = framePeak > ceiling
@@ -193,17 +202,24 @@ final class TopographicRidgeScene: VeloScene {
             : min(Self.ceilDownPerSec * dt, 1)
         ceiling += (framePeak - ceiling) * ceilRate
 
-        // Width of the live window. Never narrower than `minSpan`, so silence
-        // cannot collapse it and magnify the room's own noise.
-        let floorRef = floorSum / Float(Self.cols)
-        let usable = max(ceiling - floorRef - Self.floorHeadroom, Self.minSpan)
+        // Width of the live window, in the SAME units as the numerator: signal
+        // above each column's own floor.
+        //
+        // This used to subtract the MEAN floor from a ceiling that tracked the
+        // raw peak, while each column's numerator subtracted its own floor. The
+        // two disagreed by however far a column's floor sat from the average —
+        // and the treble floor is about eight times lower than the bass floor,
+        // because room rumble lives at the bottom. So the right of the frame got
+        // a numerator sized against a near-zero floor over a span sized against
+        // a much higher one, went past 1.0, and pinned to the ceiling on
+        // material that filled the whole spectrum.
+        let usable = max(ceiling, Self.minSpan)
         let span = usable / Self.peakTarget
 
         // Pass two: map each column through the window.
         var peak: Float = 0
         for i in 0..<Self.cols {
-            let above = raw[i] - noiseFloor[i] - Self.floorHeadroom
-            let h = min(max(above / span, 0), 1)
+            let h = min(max(above[i] / span, 0), 1)
             profile[i] += (h - profile[i]) * k
             peak = max(peak, profile[i])
         }
@@ -212,6 +228,22 @@ final class TopographicRidgeScene: VeloScene {
             debugClock += dt
             if debugClock > 0.5 {
                 debugClock = 0
+                // Per-third breakdown across the frequency axis, which is what
+                // makes a one-sided problem visible at all. `atCeil` counts
+                // columns already clamped at 1.0 by the analyser itself, before
+                // this scene sees them.
+                let third = Self.cols / 3
+                func mn(_ a: ArraySlice<Float>) -> Float { a.reduce(0, +) / Float(a.count) }
+                let atCeil = raw.filter { $0 >= 0.999 }.count
+                let rawL = mn(raw[0..<third]), rawM = mn(raw[third..<(2 * third)])
+                let rawR = mn(raw[(2 * third)...])
+                let flL = mn(noiseFloor[0..<third]), flM = mn(noiseFloor[third..<(2 * third)])
+                let flR = mn(noiseFloor[(2 * third)...])
+                let hL = mn(profile[0..<third]), hM = mn(profile[third..<(2 * third)])
+                let hR = mn(profile[(2 * third)...])
+                VeloLog.write("ridge", String(
+                    format: "RAW %.3f/%.3f/%.3f  FLOOR %.3f/%.3f/%.3f  H %.2f/%.2f/%.2f  atCeil=%d",
+                    rawL, rawM, rawR, flL, flM, flR, hL, hM, hR, atCeil))
                 let rawPeak = bins.max() ?? 0
                 let floorPeak = noiseFloor.max() ?? 0
                 let mean = profile.reduce(0, +) / Float(Self.cols)
