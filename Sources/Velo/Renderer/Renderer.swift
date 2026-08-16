@@ -91,6 +91,30 @@ final class Renderer: @unchecked Sendable {
     private var mixPipeline: MTLRenderPipelineState?
     private var lastOffscreenInResidency: MTLTexture?
 
+    /// Fade the output to black without stopping it.
+    ///
+    /// Set from a MIDI pad or the dashboard. The ramp is here rather than in the
+    /// UI because the Syphon path renders headless — there is no SwiftUI
+    /// animation driving that frame loop, and a hard cut to black on a live feed
+    /// is not what "fade" means.
+    var fadeOut: Bool = false
+    /// 1 = full, 0 = black. Eased toward the target every frame.
+    private var fadeLevel: Float = 1
+    /// Seconds for a full fade, in each direction.
+    private static let fadeSeconds: Float = 0.45
+
+    /// Advance the fade and return the multiplier for this frame's `dim`.
+    private func stepFade(dt: Float) -> Float {
+        let target: Float = fadeOut ? 0 : 1
+        let step = dt / Self.fadeSeconds
+        if fadeLevel < target {
+            fadeLevel = min(fadeLevel + step, target)
+        } else if fadeLevel > target {
+            fadeLevel = max(fadeLevel - step, target)
+        }
+        return fadeLevel
+    }
+
     var transitionsEnabled: Bool = false
     var transitionDuration: Float = 10.0
     private var transitionStartTime: Float = -1
@@ -531,6 +555,7 @@ final class Renderer: @unchecked Sendable {
         frameIndex &+= 1
 
         let dt = lastTime < 0 ? 1.0 / 120.0 : min(max(time - lastTime, 0), 0.1)
+        let fade = stepFade(dt: dt)
         lastTime = time
         beatBus.update(audio: audio, dt: dt, time: time)
         BeatBus.current = beatBus
@@ -590,7 +615,7 @@ final class Renderer: @unchecked Sendable {
         var uniforms = Uniforms(
             resolution: SIMD2(Float(renderTarget.width), Float(renderTarget.height)),
             time: time,
-            dim: 1,
+            dim: fade,
             hueShift: theme.hueShift,
             saturation: theme.saturation,
             tintR: theme.tintR,
@@ -788,6 +813,7 @@ final class Renderer: @unchecked Sendable {
         frameIndex &+= 1
 
         let dt = lastTime < 0 ? 1.0 / 60.0 : min(max(time - lastTime, 0), 0.1)
+        let fade = stepFade(dt: dt)
         lastTime = time
         beatBus.update(audio: audio, dt: dt, time: time)
         let transitionProgress: Float
@@ -819,7 +845,7 @@ final class Renderer: @unchecked Sendable {
         let theme = ThemePreset.current.grade
         var uniforms = Uniforms(
             resolution: SIMD2(Float(offscreen.width), Float(offscreen.height)),
-            time: time, dim: 1,
+            time: time, dim: fade,
             hueShift: theme.hueShift, saturation: theme.saturation,
             tintR: theme.tintR, tintG: theme.tintG, tintB: theme.tintB,
             mixAlpha: transitionProgress,

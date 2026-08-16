@@ -37,6 +37,8 @@ final class MidiController: @unchecked Sendable {
         case favourite(Int)
         /// Start or stop one brand's light sync.
         case toggleLights(LightBrandAction)
+        /// Fade the output to black and back, without stopping the render.
+        case fadeVisuals
     }
 
     struct Mapping: Codable, Equatable {
@@ -47,15 +49,18 @@ final class MidiController: @unchecked Sendable {
         /// One trigger per lighting brand, keyed by its raw value so adding a
         /// brand later cannot shift the meaning of what is already saved.
         var lights: [String: MidiTrigger]
+        var fadeVisuals: MidiTrigger?
 
         init(previousVisual: MidiTrigger? = nil,
              nextVisual: MidiTrigger? = nil,
              favourites: [MidiTrigger?] = [],
-             lights: [String: MidiTrigger] = [:]) {
+             lights: [String: MidiTrigger] = [:],
+             fadeVisuals: MidiTrigger? = nil) {
             self.previousVisual = previousVisual
             self.nextVisual = nextVisual
             self.favourites = Self.padded(favourites)
             self.lights = lights
+            self.fadeVisuals = fadeVisuals
         }
 
         init(from decoder: Decoder) throws {
@@ -66,6 +71,7 @@ final class MidiController: @unchecked Sendable {
             let saved = try c.decodeIfPresent([MidiTrigger?].self, forKey: .favourites) ?? []
             favourites = Self.padded(saved)
             lights = try c.decodeIfPresent([String: MidiTrigger].self, forKey: .lights) ?? [:]
+            fadeVisuals = try c.decodeIfPresent(MidiTrigger.self, forKey: .fadeVisuals)
         }
 
         /// Trim or pad so the array is always exactly `favouriteSlots` long —
@@ -85,6 +91,7 @@ final class MidiController: @unchecked Sendable {
                 case .favourite(let i):
                     return favourites.indices.contains(i) ? favourites[i] : nil
                 case .toggleLights(let brand): return lights[brand.rawValue]
+                case .fadeVisuals: return fadeVisuals
                 }
             }
             set {
@@ -95,6 +102,7 @@ final class MidiController: @unchecked Sendable {
                     guard favourites.indices.contains(i) else { return }
                     favourites[i] = newValue
                 case .toggleLights(let brand): lights[brand.rawValue] = newValue
+                case .fadeVisuals: fadeVisuals = newValue
                 }
             }
         }
@@ -107,6 +115,7 @@ final class MidiController: @unchecked Sendable {
             for brand in LightBrandAction.allCases where lights[brand.rawValue] == trigger {
                 return .toggleLights(brand)
             }
+            if trigger == fadeVisuals { return .fadeVisuals }
             return nil
         }
 
@@ -118,6 +127,7 @@ final class MidiController: @unchecked Sendable {
                 favourites[i] = nil
             }
             for (k, v) in lights where v == trigger { lights[k] = nil }
+            if fadeVisuals == trigger { fadeVisuals = nil }
         }
     }
 

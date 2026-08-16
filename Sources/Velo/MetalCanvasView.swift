@@ -233,6 +233,11 @@ final class MetalCanvasNSView: NSView {
     var onSceneChange: ((Int) -> Void)?
     var favourites: [Int] = []
     
+    /// Fade the output to black without stopping the render.
+    var visualsFaded: Bool = false {
+        didSet { renderer?.fadeOut = visualsFaded }
+    }
+
     var transitionsEnabled: Bool = false {
         didSet { renderer?.transitionsEnabled = transitionsEnabled }
     }
@@ -321,6 +326,7 @@ final class MetalCanvasNSView: NSView {
         applyColorConfiguration()
         renderer = Renderer(device: device)
         renderer?.transitionsEnabled = transitionsEnabled
+        renderer?.fadeOut = visualsFaded
         renderer?.transitionDuration = Float(transitionDuration)
     }
 
@@ -593,6 +599,7 @@ struct MetalCanvasView: NSViewRepresentable {
     var favourites: [Int]
     var transitionsEnabled: Bool
     var transitionDuration: Double
+    var visualsFaded: Bool
 
     func makeNSView(context: Context) -> MetalCanvasNSView {
         let view = MetalCanvasNSView(frame: .zero)
@@ -615,6 +622,7 @@ struct MetalCanvasView: NSViewRepresentable {
         view.favourites = favourites
         view.transitionsEnabled = transitionsEnabled
         view.transitionDuration = transitionDuration
+        view.visualsFaded = visualsFaded
         return view
     }
 
@@ -637,5 +645,6 @@ struct MetalCanvasView: NSViewRepresentable {
         nsView.favourites = favourites
         nsView.transitionsEnabled = transitionsEnabled
         nsView.transitionDuration = transitionDuration
+        nsView.visualsFaded = visualsFaded
     }
 }

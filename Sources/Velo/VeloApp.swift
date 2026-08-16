@@ -240,6 +240,11 @@ final class AppModel {
         didSet { UserDefaults.standard.set(visualsDisabled, forKey: "velo_visuals_off") }
     }
 
+    /// Fade the output to black without stopping it. Deliberately NOT
+    /// persisted: coming back from a restart with the output silently black
+    /// would be indistinguishable from the app being broken.
+    var visualsFaded = false
+
     var transitionsEnabled: Bool = false {
         didSet { UserDefaults.standard.set(transitionsEnabled, forKey: "velo_transitions") }
     }
@@ -471,6 +476,8 @@ final class AppModel {
                 if let target = sceneForSlot(slot) { sceneIndex = target }
             case .toggleLights(let brand):
                 toggleLightSync(brand)
+            case .fadeVisuals:
+                visualsFaded.toggle()
             }
         }
     }

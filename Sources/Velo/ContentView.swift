@@ -63,7 +63,8 @@ struct ContentView: View {
                 onSceneChange: { model.sceneIndex = $0 },
                 favourites: model.favourites,
                 transitionsEnabled: model.transitionsEnabled,
-                transitionDuration: model.transitionDuration
+                transitionDuration: model.transitionDuration,
+                visualsFaded: model.visualsFaded
             )
             .ignoresSafeArea()
 
@@ -73,8 +74,8 @@ struct ContentView: View {
                     .allowsHitTesting(false)
             }
 
-            if model.syphonEnabled && !model.visualPickerOpen {
-                SyphonModePanel(model: model)
+            if model.syphonEnabled {
+                SyphonDashboard(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.black)
             }
@@ -727,6 +728,13 @@ private struct ControlPanel: View {
 
                 Divider().background(Color.white.opacity(0.1)).padding(.vertical, 4)
 
+                midiRow("Fade visuals", action: .fadeVisuals)
+                caption("Fades the output to black and back over about half a "
+                        + "second, without stopping the render. Works in Syphon "
+                        + "mode, where it fades what OBS receives.")
+
+                Divider().background(Color.white.opacity(0.1)).padding(.vertical, 4)
+
                 HStack {
                     Text("Listen on Channel")
                         .font(Velo.label(13))
@@ -992,135 +1000,78 @@ private struct FileTransportView: View {
 /// Replaces the canvas when Syphon output is active. The renderer keeps
 /// running headless (feeding the Syphon 4K output) while the window shows
 /// this compact control surface.
-private struct SyphonModePanel: View {
+/// Everything at once, for when the canvas is off.
+///
+/// In Syphon mode the window shows no visuals — the render is headless and the
+/// output goes straight to the client — so the whole surface is free for
+/// controls. Slide-out panels made sense when they were covering a live canvas;
+/// here they only meant opening and closing things, or remembering which key
+/// opened what, while a set was running.
+///
+/// The three existing panels are reused unchanged rather than reimplemented, so
+/// there is one definition of every control and the dashboard cannot drift from
+/// the panels. They carry their own widths and backgrounds, which is why they
+/// drop into a row without adjustment.
+private struct SyphonDashboard: View {
     @Bindable var model: AppModel
-    @State private var devices: [AudioInputDevice] = []
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    Wordmark().padding(.bottom, 4)
+        VStack(alignment: .leading, spacing: 16) {
+            header
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
 
-                    syphonStatus
-
-                    Divider().overlay(.white.opacity(0.12))
-
-                    section("Visual")
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(SceneCatalog.names[model.sceneIndex])
-                            .font(Velo.display(16))
-                        caption("V to browse visuals, or \u{2190} \u{2192} to step.")
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Theme")
-                            .font(Velo.label(13))
-                            .foregroundStyle(.white.opacity(0.5))
-                        HStack(spacing: 4) {
-                            ForEach(ThemePreset.allCases, id: \.self) { t in
-                                Button(t.label) { model.themePreset = t }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.regular)
-                                    .opacity(model.themePreset == t ? 1.0 : 0.4)
-                            }
-                        }
-                    }
-
-                    Divider().overlay(.white.opacity(0.12))
-
-                    section("Audio")
-                    VStack(alignment: .leading, spacing: 6) {
-                        AudioInputPicker(model: model, devices: devices)
-                            .frame(maxWidth: 280)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Beat Sensitivity")
-                            .font(Velo.label(13))
-                            .foregroundStyle(.white.opacity(0.5))
-                        HStack(spacing: 4) {
-                            ForEach(BeatSensitivity.allCases, id: \.self) { s in
-                                Button(s.label) { model.beatSensitivity = s }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.regular)
-                                    .opacity(model.beatSensitivity == s ? 1.0 : 0.4)
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Show beats on visuals", isOn: $model.showBeatsOnVisuals)
-                            .toggleStyle(.switch)
-                        caption("Off for chroma key: prevents white flashes "
-                                + "going transparent. Lights still react.")
-                    }
-
-                    Divider().overlay(.white.opacity(0.12))
-
-                    section("Output")
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Syphon output", isOn: $model.syphonEnabled)
-                            .toggleStyle(.switch)
-                        caption("Turn off to return to the live canvas.")
-                    }
-
-                    Divider().overlay(.white.opacity(0.12))
-
-                    Text("V visuals · \u{2190} \u{2192} step · S syphon · L lighting")
-                        .font(Velo.label(12))
-                        .foregroundStyle(.white.opacity(0.3))
+            // Horizontal scroll so a narrow window degrades to a swipe rather
+            // than to clipped panels: the three are about 1080 pt together.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 16) {
+                    VisualPickerPanel(model: model)
+                    ControlPanel(model: model)
+                    LightingPanel(model: model)
                 }
-                .padding(24)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
-        }
-        .frame(maxWidth: 380)
-        .foregroundStyle(.white)
-        .task { devices = AudioEngine.inputDevices() }
-        .onChange(of: model.selectedDeviceUID) { _, uid in
-            model.audio.start(deviceUID: uid)
         }
     }
 
-    private var syphonStatus: some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private var header: some View {
+        HStack(alignment: .center, spacing: 20) {
+            Wordmark()
+
             HStack(spacing: 8) {
                 Circle()
-                    .fill(.green)
+                    .fill(model.visualsFaded ? .orange : .green)
                     .frame(width: 8, height: 8)
-                Text("SYPHON ACTIVE")
-                    .font(Velo.display(13))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.7))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.visualsFaded ? "FADED TO BLACK" : "SYPHON ACTIVE")
+                        .font(Velo.display(13))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text("3840 \u{00D7} 2160 \u{00B7} \(Int(model.perf.fps)) fps \u{00B7} "
+                         + SceneCatalog.names[model.sceneIndex])
+                        .font(Velo.readout(13))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.5))
+                }
             }
-            Text("3840 \u{00D7} 2160 \u{00B7} \(Int(model.perf.fps)) fps")
-                .font(Velo.readout(14))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.5))
+
+            Spacer()
+
+            // The one control that belongs here rather than in a panel: it is
+            // what someone reaches for in a hurry, and it should not be behind
+            // a scroll position.
+            Button(model.visualsFaded ? "Restore Output" : "Fade to Black") {
+                model.visualsFaded.toggle()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(model.visualsFaded ? .orange : .secondary)
         }
-    }
-
-    private func section(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(Velo.display(14))
-            .tracking(1.6)
-            .foregroundStyle(.white.opacity(0.45))
-    }
-
-    private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(Velo.light(13))
-            .foregroundStyle(.white.opacity(0.5))
-            .fixedSize(horizontal: false, vertical: true)
+        .foregroundStyle(.white)
     }
 }
 
-/// The visual picker, opened with the V key.
-///
-/// Typography carries the design: scene names set in ClashDisplay Extralight
-/// at size, the spectacle weight that only earns its keep when you give it room.
-/// The list reads like a credits roll — the names ARE the interface, not labels
-/// on top of one. Instruments and generative visuals are separated by a quiet
 /// section whisper that stays out of the way.
 private struct VisualPickerPanel: View {
     @Bindable var model: AppModel
