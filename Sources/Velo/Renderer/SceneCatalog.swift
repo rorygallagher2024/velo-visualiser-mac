@@ -35,6 +35,11 @@ enum SceneCatalog {
         "Chromatic Frame",
         "Edge Equaliser",
         "Edge Waveform",
+        "Solaris Rings",
+        "Caustic Veil",
+        "Silk Smoke",
+        "Prism Aura",
+        "Cyber Horizon",
     ]
 
     /// Indices of the overlay visuals, in catalogue order.
@@ -103,6 +108,11 @@ enum SceneCatalog {
         "Plasma Storm",
         "Audio Web",
         "Dynamic Web",
+        "Solaris Rings",
+        "Caustic Veil",
+        "Silk Smoke",
+        "Prism Aura",
+        "Cyber Horizon",
     ]
 
     static func makeAll() -> [VeloScene] {
@@ -158,6 +168,11 @@ enum SceneCatalog {
             PlasmaStormScene(),
             AudioWebScene(),
             DynamicWebScene(),
+            SolarisRingsScene(),
+            CausticVeilScene(),
+            SilkSmokeScene(),
+            PrismAuraScene(),
+            CyberHorizonScene(),
         ]
     }
 
