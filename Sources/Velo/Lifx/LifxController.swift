@@ -172,7 +172,11 @@ final class LifxController: @unchecked Sendable {
             var lastBeat = BeatBus.shared.beatCount
             var lastBeatNs: UInt64 = 0
             var smoothedBri: Float = cfg.restingGlow
-            let frameNs: UInt64 = 1_000_000_000 / 50
+            let frameNs: UInt64 = 1_000_000_000 / UInt64(Self.sendHz)
+            // Fixed-rate loop, so the target interval IS the timestep. Both
+            // smoothers below were written per frame at 50 Hz and have to be
+            // rescaled by it or changing the rate changes the feel.
+            let dt = Float(frameNs) / 1_000_000_000
 
             guard let socket = try? Self.udpSocket() else {
                 VeloLog.write("lifx", "Failed to create sender socket")
@@ -200,9 +204,14 @@ final class LifxController: @unchecked Sendable {
                     }
                     lastBeat = bc
                 }
-                flash *= Self.flashDecay
+                // Per second, not per frame. At a flat 0.80 per frame the beat
+                // flash lasted 0.21 s at 50 Hz and would have stretched to
+                // 0.34 s at 30 Hz — the lights would simply have felt sluggish,
+                // and it would have looked like the rate change caused it.
+                flash *= powf(Self.flashDecay, dt * Self.referenceHz)
 
-                let color = Self.calculateAudioColor(cfg: cfg, bus: bus, flash: flash, smoothedBri: &smoothedBri)
+                let color = Self.calculateAudioColor(
+                    cfg: cfg, bus: bus, flash: flash, dt: dt, smoothedBri: &smoothedBri)
                 let active = self.selectedBulbs()
                 let count = active.count
 
@@ -216,7 +225,14 @@ final class LifxController: @unchecked Sendable {
                         hue: bulbHue,
                         sat: color.sat,
                         bri: color.bri,
-                        durationMs: 0
+                        // Let the bulb interpolate rather than snapping. A
+                        // SetColor with duration 0 makes every frame a hard
+                        // step, so all smoothness had to come from packet rate
+                        // — which is why this ran at 50 Hz. Firmware tweening
+                        // gives a smoother result at fewer packets. Kept well
+                        // under the frame interval so a kick still lands as a
+                        // hit rather than a ramp.
+                        durationMs: UInt32(Self.transitionMs)
                     )
                     try? socket.send(packet, toIP: bulb.ip)
                 }
@@ -241,7 +257,7 @@ final class LifxController: @unchecked Sendable {
         let bri: Float
     }
 
-    private static func calculateAudioColor(cfg: LightingSettings, bus: BeatBus, flash: Float, smoothedBri: inout Float) -> LifxColor {
+    private static func calculateAudioColor(cfg: LightingSettings, bus: BeatBus, flash: Float, dt: Float, smoothedBri: inout Float) -> LifxColor {
         let low = bus.bassRatio
         let mid: Float = 0.5
         let high: Float = 1.0 - low
@@ -249,7 +265,10 @@ final class LifxController: @unchecked Sendable {
         let total = low + mid + high + 1e-3
         let centroid = ((mid * 0.5 + high) / total).clamped(0, 1)
         let rawBri = cfg.audioBrightnessValue(low: low, mid: mid, high: high, flash: flash)
-        smoothedBri += (rawBri - smoothedBri) * cfg.brightnessSmoothing
+        // Also rescaled: the setting is calibrated per frame at the reference
+        // rate, so it must be stretched to the real timestep.
+        smoothedBri += (rawBri - smoothedBri)
+            * min(cfg.brightnessSmoothing * dt * referenceHz, 1)
         let bri = smoothedBri
         let sat = max(0.6, audioSat - flash * 0.3)
         let hue = audioHueBass + (audioHueTreble - audioHueBass) * centroid
@@ -274,6 +293,30 @@ final class LifxController: @unchecked Sendable {
     }
 
     // MARK: - Constants
+
+    /// LIFX documents a ceiling of 20 messages per second to a single device,
+    /// and this sends one packet PER BULB per frame — so the network cost is
+    /// this times the bulb count. 50 Hz was two and a half times the documented
+    /// limit, and on an eight-bulb rig that was 400 packets a second of
+    /// unacknowledged UDP.
+    ///
+    /// Hue and Nanoleaf are left alone deliberately: each streams to a single
+    /// hub which drives its own lights, so neither scales with light count and
+    /// both are designed for continuous high-rate updates. LIFX is the only
+    /// integration that talks to many Wi-Fi endpoints directly.
+    ///
+    /// 30 rather than 20: this app's whole premise is low latency, and a 50 ms
+    /// frame interval adds 30 ms of scheduling jitter before a change is even
+    /// sent. 30 Hz cuts the traffic by 40% while keeping the interval at 33 ms.
+    private static let sendHz: Double = 30
+
+    /// What the per-frame smoothing constants below were calibrated at.
+    private static let referenceHz: Float = 50
+
+    /// Firmware transition time. Under the frame interval on purpose — long
+    /// enough to hide the step between updates, short enough that the attack of
+    /// a beat is not audibly late.
+    private static let transitionMs: Double = 25
 
     private static let flashDecay: Float = 0.80
     private static let audioSat: Float = 0.92
