@@ -54,9 +54,14 @@ layers in the way.
 
 ## Core Features
 
-* **44 Audio-Reactive Visuals:** Waveforms, spectra, particle fluids, scrolling
+* **56 Audio-Reactive Visuals:** Waveforms, spectra, particle fluids, scrolling
   spectrograms, dot-matrix LED meters, true stereo XY oscilloscopes (including a
-  phosphor CRT scope for oscilloscope music), and more.
+  phosphor CRT scope for oscilloscope music), and more. Grouped in the picker as
+  Instruments, Generative and **Overlays**.
+* **19 Overlay Visuals:** A dedicated set built to composite over a camera feed —
+  mostly black, sparse or edge-weighted, and calm enough to decorate a shot
+  rather than compete with it. They go genuinely dark in silence, learning what
+  your room sounds like when quiet, so nothing sits lit between tracks.
 * **High-FPS, HDR-Capable Visuals:** With real highlights on displays that support
   extended range.
 * **Local File Playback:** Open audio files (WAV, FLAC, AIFF, MP3, AAC) with
@@ -73,11 +78,14 @@ layers in the way.
   Anything macOS lists as an input can drive it.
 * **Syphon Output:** Zero-copy GPU sharing into OBS and any Syphon client at a
   fixed 3840×2160, no window capture needed. When Syphon is active the window
-  shows a compact control panel instead of the canvas.
+  shows a **dashboard** — visuals, settings and lighting side by side, all live —
+  since the canvas itself is going to the client. Output is converted to Rec.709
+  on the way out so colours match what the app shows.
 * **Favourites:** Mark visuals as favourites in the picker and the first ten
   are keyed to 1–9 and 0 for instant recall during a set.
-* **MIDI Control:** Map any MIDI CC or note to step through visuals from a
-  hardware controller. MIDI learn makes setup instant.
+* **MIDI Control:** Map any MIDI CC or note to step visuals, recall any of ten
+  favourite slots, toggle each lighting brand, or fade the output to black
+  mid-set. MIDI learn makes setup instant.
 * **Colour Themes:** Five colour grades (Default, Neon, Warm, Cool and Mono)
   applied to every visual. Cycle with the T key or pick from the controls.
 * **Beat Flash Toggle:** Suppress beat-triggered white flashes for chroma-key
@@ -124,7 +132,8 @@ via MIDI learn in the settings panel. No config files, no channel hunting.
 1. Connect your MIDI controller.
 2. Open the settings panel (`M`).
 3. Scroll to the **MIDI** section.
-4. Click **Learn** next to "Next visual" or "Previous visual".
+4. Make sure **MIDI control** is switched on, then click **Learn** next to the
+   action you want.
 5. Move the knob, fader, or button on your controller that you want to use.
 6. The mapping appears immediately and is saved across launches.
 
@@ -134,6 +143,16 @@ via MIDI learn in the settings panel. No config files, no channel hunting.
 |--------|-------------|
 | **Previous visual** | Step one visual backward in the catalogue |
 | **Next visual** | Step one visual forward in the catalogue |
+| **Favourite 1–10** | Jump straight to a favourite, the same ten the number keys reach |
+| **Hue / LIFX / Nanoleaf** | Start or stop that brand's light sync |
+| **Fade visuals** | Fade the output to black and back over about half a second |
+
+Learning a control that is already mapped **moves** it, so one pad can never end
+up driving two actions at once. A lighting brand with nothing paired ignores the
+press rather than putting an error over your visuals.
+
+**Fade visuals** works in Syphon mode too, where it fades what OBS receives — the
+render keeps going throughout, so it reads as a transition rather than a cut.
 
 Both CC messages (knobs, faders, buttons) and note-on messages (pads, keys) are
 supported. The mapping stores the MIDI channel and controller/note number, so
