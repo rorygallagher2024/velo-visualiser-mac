@@ -18,6 +18,19 @@ shares its design language and its visuals. This one
 is Swift and Metal 4 throughout, Apple Silicon only, with no compatibility
 layers in the way.
 
+## Demo
+
+<p align="center">
+  <a href="https://youtu.be/PL_snHzP5fE">
+    <img src="https://img.youtube.com/vi/PL_snHzP5fE/maxresdefault.jpg"
+         alt="Watch Velo Visualiser in action" width="720">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://youtu.be/PL_snHzP5fE"><b>Watch the demo on YouTube</b></a>
+</p>
+
 ## What's the app for
 
 1. **Visualising music on a Mac.** A modern take on the classic desktop
