@@ -54,11 +54,11 @@ layers in the way.
 
 ## Core Features
 
-* **56 Audio-Reactive Visuals:** Waveforms, spectra, particle fluids, scrolling
+* **59 Audio-Reactive Visuals:** Waveforms, spectra, particle fluids, scrolling
   spectrograms, dot-matrix LED meters, true stereo XY oscilloscopes (including a
   phosphor CRT scope for oscilloscope music), and more. Grouped in the picker as
   Instruments, Generative and **Overlays**.
-* **19 Overlay Visuals:** A dedicated set built to composite over a camera feed —
+* **22 Overlay Visuals:** A dedicated set built to composite over a camera feed —
   mostly black, sparse or edge-weighted, and calm enough to decorate a shot
   rather than compete with it. They go genuinely dark in silence, learning what
   your room sounds like when quiet, so nothing sits lit between tracks.

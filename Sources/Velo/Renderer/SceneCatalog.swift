@@ -40,6 +40,9 @@ enum SceneCatalog {
         "Silk Smoke",
         "Prism Aura",
         "Cyber Horizon",
+        "Abyssal Drift",
+        "Prism Monolith",
+        "Magnetosphere",
     ]
 
     /// Indices of the overlay visuals, in catalogue order.
@@ -113,6 +116,9 @@ enum SceneCatalog {
         "Silk Smoke",
         "Prism Aura",
         "Cyber Horizon",
+        "Abyssal Drift",
+        "Prism Monolith",
+        "Magnetosphere",
     ]
 
     static func makeAll() -> [VeloScene] {
@@ -173,6 +179,9 @@ enum SceneCatalog {
             SilkSmokeScene(),
             PrismAuraScene(),
             CyberHorizonScene(),
+            AbyssalDriftScene(),
+            PrismMonolithScene(),
+            MagnetosphereScene(),
         ]
     }
 
