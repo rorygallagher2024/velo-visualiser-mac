@@ -23,8 +23,20 @@ struct VeloApp: App {
                     model.openAudioFilePanel()
                 }
                 .keyboardShortcut("o", modifiers: .command)
+
+                Button("Controls Window") { model.showControlsWindow() }
+                    .keyboardShortcut("k", modifiers: .command)
             }
         }
+
+        // Opened on demand, not at launch: on a single-display machine it never
+        // needs to exist, and an empty second window at every start would be
+        // clutter for the majority who never drive a projector.
+        Window("Velo Controls", id: ControlsWindow.id) {
+            ControlsWindow(model: model)
+        }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1120, height: 760)
     }
 }
 
@@ -96,6 +108,61 @@ final class AppModel {
     /// Excluding it here removes the mismatch without touching the render path.
     var hdrActive: Bool { hdrEnabled && hdrAvailable && !syphonEnabled }
 
+    // MARK: - Output display
+
+    /// Display the canvas is sent to. Persisted by name; nil means "wherever
+    /// the window already is", which is how fullscreen behaved before this.
+    var outputDisplayName: String? = UserDefaults.standard
+        .string(forKey: AppModel.outputDisplayKey) {
+        didSet {
+            guard outputDisplayName != oldValue else { return }
+            if let outputDisplayName {
+                UserDefaults.standard.set(outputDisplayName, forKey: Self.outputDisplayKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.outputDisplayKey)
+            }
+        }
+    }
+
+    private static let outputDisplayKey = "velo_output_display"
+
+    /// Refreshed whenever displays are attached, removed or rearranged.
+    private(set) var displays: [DisplayTarget] = DisplayTarget.all()
+
+    var hasExternalDisplay: Bool { displays.count > 1 }
+
+    /// Bumped when the canvas should actually move.
+    ///
+    /// The canvas watches this counter rather than `outputDisplayName`, so a
+    /// display remembered from last night does not seize the app the moment it
+    /// launches — the preference is restored, acting on it stays a decision.
+    private(set) var sendToDisplayRequest = 0
+
+    /// Bumped when the controls window should be brought up.
+    private(set) var controlsWindowRequest = 0
+
+    /// Send the canvas to `target` and fill that display.
+    func sendCanvas(to target: DisplayTarget) {
+        outputDisplayName = target.name
+        sendToDisplayRequest += 1
+        // The whole point of driving a second display is that the controls stay
+        // on this one, so raise them rather than making the user find the menu
+        // with the panel now sitting on the projector.
+        if !target.isMain { controlsWindowRequest += 1 }
+        VeloLog.write("display", "canvas to \(target.name) — \(target.detail)")
+    }
+
+    /// Step to the next attached display. Bound to E on the canvas.
+    func cycleOutputDisplay() {
+        let all = displays
+        guard all.count > 1 else { return }
+        let current = all.firstIndex { $0.name == outputDisplayName }
+            ?? all.firstIndex { $0.isMain } ?? 0
+        sendCanvas(to: all[(current + 1) % all.count])
+    }
+
+    func showControlsWindow() { controlsWindowRequest += 1 }
+
     private var screenObserver: NSObjectProtocol?
 
     private func observeDisplayChanges() {
@@ -109,10 +176,34 @@ final class AppModel {
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { _ in
+            model.refreshDisplays()
             let now = AppModel.displaySupportsHDR()
             guard now != model.hdrAvailable else { return }
             model.hdrAvailable = now
             VeloLog.write("display", "HDR capability is now \(now)")
+        }
+    }
+
+    /// Written once at launch, because which display the visuals landed on and
+    /// what rate it runs at is the first thing to check when a rig misbehaves.
+    private func logDisplays() {
+        for display in displays {
+            VeloLog.write("display", "\(display.name) \u{2014} \(display.detail)"
+                + (display.name == outputDisplayName ? " \u{2014} chosen output" : ""))
+        }
+    }
+
+    /// Re-read the attached displays, and drop a remembered one that has gone.
+    ///
+    /// Leaving a vanished display selected would leave the picker showing a
+    /// choice that cannot be acted on, and `sendCanvas` silently doing nothing.
+    private func refreshDisplays() {
+        let now = DisplayTarget.all()
+        guard now != displays else { return }
+        displays = now
+        if let name = outputDisplayName, !now.contains(where: { $0.name == name }) {
+            VeloLog.write("display", "output display \(name) disconnected")
+            outputDisplayName = nil
         }
     }
 
@@ -453,6 +544,7 @@ final class AppModel {
         self.selectedDeviceName = UserDefaults.standard.string(forKey: Self.deviceNameKey)
 
         observeDisplayChanges()
+        logDisplays()
         HueCredentialStore.migrateFromKeychain()
         if ProcessInfo.processInfo.environment["VELO_SELFTEST"] != nil { SelfTest.run() }
         VeloLog.begin()

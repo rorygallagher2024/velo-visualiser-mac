@@ -238,6 +238,23 @@ final class MetalCanvasNSView: NSView {
         didSet { renderer?.fadeOut = visualsFaded }
     }
 
+    /// Display the canvas should fill, by name.
+    ///
+    /// Plain storage on purpose: assigning it does not move anything. The move
+    /// is an explicit act (`sendToPreferredDisplay`), because `updateNSView`
+    /// re-assigns every property on every unrelated model change, and a canvas
+    /// that leapt to the projector each time a slider moved would be unusable.
+    var preferredDisplayName: String?
+
+    /// Last `sendToDisplayRequest` acted on. Seeded at creation so a remembered
+    /// display does not seize the app at launch.
+    var lastSendRequest = 0
+
+    var onCycleDisplay: (() -> Void)?
+
+    /// A move asked for while fullscreen, waiting for the Space to close.
+    private var pendingMove: NSScreen?
+
     var transitionsEnabled: Bool = false {
         didSet { renderer?.transitionsEnabled = transitionsEnabled }
     }
@@ -264,6 +281,7 @@ final class MetalCanvasNSView: NSView {
         case "t": onCycleTheme?()
         case "d": onCycleDensity?()
         case "v": onToggleVisualPicker?()
+        case "e": onCycleDisplay?()
         default:
             if let n = numberKey(in: event) {
                 changeScene(to: n)
@@ -480,8 +498,46 @@ final class MetalCanvasNSView: NSView {
         loop?.syphonCapped = syphon
     }
 
+    /// The screen `preferredDisplayName` names, if it is still attached.
+    private var preferredScreen: NSScreen? {
+        preferredDisplayName.flatMap(DisplayTarget.screen(named:))
+    }
+
+    /// Put the window on `screen` before it is asked to fill it.
+    ///
+    /// `toggleFullScreen` builds the Space on whichever display the window
+    /// currently occupies — there is no parameter for it — so relocating the
+    /// window first is the whole mechanism. `visibleFrame` rather than `frame`:
+    /// entering fullscreen from a window already overlapping the menu bar left
+    /// a briefly mis-sized Space.
+    private func place(_ window: NSWindow, on screen: NSScreen) {
+        window.setFrame(screen.visibleFrame, display: true)
+    }
+
+    /// Move the canvas to the chosen display and fill it.
+    ///
+    /// AppKit will not relocate a window that owns a fullscreen Space, so when
+    /// one is already open the move is split either side of leaving it, and
+    /// finished in `fullScreenDidChange`.
+    func sendToPreferredDisplay() {
+        guard let window, let target = preferredScreen else { return }
+        guard window.screen != target || !isFullScreen else { return }
+        if isFullScreen {
+            pendingMove = target
+            window.toggleFullScreen(nil)
+            return
+        }
+        place(window, on: target)
+        toggleFullScreen()
+    }
+
     func toggleFullScreen() {
         guard let window else { return }
+        // Going in, land on the chosen display first. Coming out, leave the
+        // window where it is — a move on the way out would be a surprise.
+        if !isFullScreen, let target = preferredScreen, window.screen != target {
+            place(window, on: target)
+        }
         // Activate first. A fullscreen Space belonging to an application the
         // system does not consider active is throttled hard, and the app is
         // frequently not active at the moment the key is pressed.
@@ -509,6 +565,27 @@ final class MetalCanvasNSView: NSView {
         applyPresentationPacing()
         requestRefreshRate()
         updateDrawableSize()
+        completePendingMove()
+    }
+
+    /// Second half of a move that had to leave a fullscreen Space first.
+    ///
+    /// Dispatched rather than run inline: `toggleFullScreen` called from within
+    /// the notification for the transition that just finished is ignored, and
+    /// the canvas would sit windowed on the new display.
+    private func completePendingMove() {
+        guard !isFullScreen, pendingMove != nil else { return }
+        pendingMove = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            // Resolved again rather than captured: unplugging the projector
+            // during the transition out is exactly when this runs, and the
+            // captured `NSScreen` would then carry a stale frame and put the
+            // window somewhere nothing can reach it.
+            guard let target = self.preferredScreen else { return }
+            self.place(window, on: target)
+            self.toggleFullScreen()
+        }
     }
 
     /// Safety net: put the display and the menu bar back if the app quits while
@@ -600,6 +677,12 @@ struct MetalCanvasView: NSViewRepresentable {
     var transitionsEnabled: Bool
     var transitionDuration: Double
     var visualsFaded: Bool
+    var preferredDisplayName: String?
+    /// Monotonic counter, not a flag: the same display can be asked for twice
+    /// running (after dragging the window off it, say) and a Bool would make
+    /// the second ask indistinguishable from the first.
+    var sendToDisplayRequest: Int
+    var onCycleDisplay: () -> Void
 
     func makeNSView(context: Context) -> MetalCanvasNSView {
         let view = MetalCanvasNSView(frame: .zero)
@@ -623,6 +706,11 @@ struct MetalCanvasView: NSViewRepresentable {
         view.transitionsEnabled = transitionsEnabled
         view.transitionDuration = transitionDuration
         view.visualsFaded = visualsFaded
+        view.preferredDisplayName = preferredDisplayName
+        view.onCycleDisplay = onCycleDisplay
+        // Adopt the count rather than starting from zero, so a display restored
+        // from last session is remembered without being acted on.
+        view.lastSendRequest = sendToDisplayRequest
         return view
     }
 
@@ -646,5 +734,15 @@ struct MetalCanvasView: NSViewRepresentable {
         nsView.transitionsEnabled = transitionsEnabled
         nsView.transitionDuration = transitionDuration
         nsView.visualsFaded = visualsFaded
+        nsView.preferredDisplayName = preferredDisplayName
+        nsView.onCycleDisplay = onCycleDisplay
+
+        if sendToDisplayRequest != nsView.lastSendRequest {
+            nsView.lastSendRequest = sendToDisplayRequest
+            // Out of the update pass before touching the window: entering a
+            // fullscreen Space from inside SwiftUI's layout is a re-entrant
+            // window change, and AppKit drops some of it.
+            DispatchQueue.main.async { nsView.sendToPreferredDisplay() }
+        }
     }
 }

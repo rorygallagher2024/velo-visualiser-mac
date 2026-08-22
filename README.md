@@ -81,6 +81,12 @@ layers in the way.
   shows a **dashboard** — visuals, settings and lighting side by side, all live —
   since the canvas itself is going to the client. Output is converted to Rec.709
   on the way out so colours match what the app shows.
+* **Second Display Output:** Send the canvas to a projector, TV or second
+  monitor in real fullscreen, and keep the controls on the machine in front of
+  you. The panels move into a window of their own on your display, so nothing
+  the audience sees has a menu over it. `E` steps to the next display, and the
+  choice is remembered — but never acted on at launch, so plugging in at the
+  venue is still your decision.
 * **Favourites:** Mark visuals as favourites in the picker and the first ten
   are keyed to 1–9 and 0 for instant recall during a set.
 * **MIDI Control:** Map any MIDI CC or note to step visuals, recall any of ten
@@ -114,10 +120,12 @@ The canvas carries no on screen controls, so everything is a key.
 | `D` | cycle Crystal Swarm density |
 | `S` | Syphon output on or off |
 | `B` | beat flash on or off |
-| `F` | fullscreen |
+| `F` | fullscreen (on your chosen output display) |
+| `E` | send the canvas to the next display |
 | `H` | HDR on or off (hidden when display has no HDR) |
 | `P` | diagnostics overlay |
 | `Cmd+O` | open audio file for playback |
+| `Cmd+K` | open the controls window |
 | `Space` | play/pause file playback |
 | `1` to `9`, `0` | jump to a favourite (or catalogue position when no favourites) |
 | `left` `right` | step through the visuals |

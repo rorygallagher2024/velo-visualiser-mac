@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Bindable var model: AppModel
     @State private var keyMonitor: Any?
+    @Environment(\.openWindow) private var openWindow
 
     /// Polled rather than pushed. The stats are written from the render thread
     /// every frame, and driving SwiftUI at that rate would spend more time
@@ -64,7 +65,10 @@ struct ContentView: View {
                 favourites: model.favourites,
                 transitionsEnabled: model.transitionsEnabled,
                 transitionDuration: model.transitionDuration,
-                visualsFaded: model.visualsFaded
+                visualsFaded: model.visualsFaded,
+                preferredDisplayName: model.outputDisplayName,
+                sendToDisplayRequest: model.sendToDisplayRequest,
+                onCycleDisplay: { model.cycleOutputDisplay() }
             )
             .ignoresSafeArea()
 
@@ -75,7 +79,9 @@ struct ContentView: View {
             }
 
             if model.syphonEnabled {
-                SyphonDashboard(model: model)
+                Dashboard(model: model,
+                          status: "SYPHON ACTIVE",
+                          resolution: "3840 \u{00D7} 2160")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.black)
             }
@@ -141,6 +147,9 @@ struct ContentView: View {
             }
             return true
         }
+        .onChange(of: model.controlsWindowRequest) {
+            openWindow(id: ControlsWindow.id)
+        }
         .onAppear { installKeyMonitor() }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
@@ -165,6 +174,9 @@ struct ContentView: View {
                 if model.lightingOpen {
                     model.menuOpen = false; model.visualPickerOpen = false
                 }
+                return nil
+            case "e":
+                model.cycleOutputDisplay()
                 return nil
             case "v":
                 model.visualPickerOpen.toggle()
@@ -490,6 +502,9 @@ private struct ControlPanel: View {
                 Divider().overlay(.white.opacity(0.12))
 
                 section("Display")
+
+                OutputDisplayPicker(model: model)
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Beat Sensitivity")
                         .font(Velo.label(13))
@@ -858,6 +873,80 @@ private struct ControlPanel: View {
     }
 }
 
+/// Chooses which display the canvas fills.
+///
+/// Only shown when there is more than one, since on a single-display machine it
+/// would be a control with exactly one setting.
+private struct OutputDisplayPicker: View {
+    @Bindable var model: AppModel
+
+    /// The display currently selected, falling back to the main one so the
+    /// picker always has a matching tag rather than rendering blank.
+    private var selection: Binding<String> {
+        Binding(
+            get: {
+                model.outputDisplayName
+                    ?? model.displays.first { $0.isMain }?.name
+                    ?? model.displays.first?.name
+                    ?? ""
+            },
+            set: { name in
+                guard let target = model.displays.first(where: { $0.name == name })
+                else { return }
+                model.sendCanvas(to: target)
+            })
+    }
+
+    private var onExternal: Bool {
+        guard let name = model.outputDisplayName else { return false }
+        return model.displays.first { $0.name == name }.map { !$0.isMain } ?? false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Output display", selection: selection) {
+                ForEach(model.displays) { display in
+                    Text("\(display.name) \u{2014} \(display.detail)")
+                        .tag(display.name)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 280)
+
+            if onExternal {
+                Button("Show Controls Window") { model.showControlsWindow() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+            }
+
+            caption("Fills the chosen display, in real fullscreen. E steps to "
+                    + "the next one.")
+            if !model.hasExternalDisplay {
+                // Shown even with nothing to choose between. Hidden until a
+                // second display appeared, the feature was invisible to anyone
+                // who had not already plugged one in — which is everyone
+                // deciding whether the app can do it at all.
+                caption("Only this display is attached. Connect a projector, TV "
+                        + "or second monitor and it appears here.")
+            } else {
+                caption(onExternal
+                        ? "The canvas is on a second display, so the controls "
+                          + "open in their own window on this one. Closing that "
+                          + "window leaves the visuals running."
+                        : "Pick a projector or TV to send the visuals there and "
+                          + "keep the controls here.")
+            }
+        }
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(Velo.light(13))
+            .foregroundStyle(.white.opacity(0.5))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// Input-device picker, shared by the control panel and the lighting panel.
 ///
 /// The remembered device gets a row even while it is unplugged. Without it the
@@ -1012,8 +1101,100 @@ private struct FileTransportView: View {
 /// there is one definition of every control and the dashboard cannot drift from
 /// the panels. They carry their own widths and backgrounds, which is why they
 /// drop into a row without adjustment.
-private struct SyphonDashboard: View {
+/// Controls, in a window of their own on this display, while the canvas fills
+/// another one.
+///
+/// This is the point of driving a second display: the panels slide in over the
+/// canvas, and once the canvas is on the projector every control would be on
+/// the projector too. Closing this window does not stop anything — it is a
+/// remote, not the app.
+struct ControlsWindow: View {
+    static let id = "controls"
+
     @Bindable var model: AppModel
+
+    private var output: DisplayTarget? {
+        guard let name = model.outputDisplayName else { return nil }
+        return model.displays.first { $0.name == name }
+    }
+
+    var body: some View {
+        Dashboard(
+            model: model,
+            status: output.map { "OUTPUT ON \($0.name.uppercased())" }
+                ?? "OUTPUT ON THIS DISPLAY",
+            resolution: output.map { "\($0.pixelWidth) \u{00D7} \($0.pixelHeight)" }
+                ?? "\u{2014}")
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.black)
+        .background(WindowReader(onWindow: keepOffOutputDisplay).frame(width: 0, height: 0))
+    }
+
+    /// Put this window anywhere except the display the canvas is filling.
+    ///
+    /// Left alone, a new window opens on whichever display is active — which,
+    /// the instant after sending the canvas to the projector, is the projector.
+    /// The controls would then appear on the screen the audience is looking at,
+    /// which is the one thing this window exists to avoid.
+    private func keepOffOutputDisplay(_ window: NSWindow) {
+        let outputName = model.outputDisplayName
+        let candidates = zip(DisplayTarget.all(), NSScreen.screens)
+        let target = candidates.first { $0.0.isMain && $0.0.name != outputName }?.1
+            ?? candidates.first { $0.0.name != outputName }?.1
+        guard let target, window.screen != target else { return }
+        // After SwiftUI has finished placing it, or the move is overwritten.
+        DispatchQueue.main.async {
+            let size = window.frame.size
+            window.setFrame(
+                NSRect(x: target.visibleFrame.midX - size.width / 2,
+                       y: target.visibleFrame.midY - size.height / 2,
+                       width: size.width, height: size.height),
+                display: true)
+        }
+    }
+}
+
+/// Hands back the `NSWindow` a SwiftUI view has landed in.
+///
+/// SwiftUI has no way to say which display a `Window` scene should open on, and
+/// `NSApp.windows` lookup by identifier is guesswork. A zero-sized view in the
+/// hierarchy knows for certain.
+private struct WindowReader: NSViewRepresentable {
+    var onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView { Reporter(onWindow: onWindow) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class Reporter: NSView {
+        private let onWindow: (NSWindow) -> Void
+
+        init(onWindow: @escaping (NSWindow) -> Void) {
+            self.onWindow = onWindow
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("not created from a nib") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { onWindow(window) }
+        }
+    }
+}
+
+/// The three panels side by side, filling a window on their own.
+///
+/// Shared by Syphon mode and by the controls window that opens when the canvas
+/// is driving a second display: both are the same situation — the canvas is
+/// somewhere else, so the controls need a surface of their own rather than
+/// sliding in over a canvas that is not there.
+private struct Dashboard: View {
+    @Bindable var model: AppModel
+    /// What this window is standing in for, e.g. "SYPHON ACTIVE".
+    var status: String
+    /// Leading half of the readout line; the fps and scene are appended.
+    var resolution: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1044,11 +1225,11 @@ private struct SyphonDashboard: View {
                     .fill(model.visualsFaded ? .orange : .green)
                     .frame(width: 8, height: 8)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.visualsFaded ? "FADED TO BLACK" : "SYPHON ACTIVE")
+                    Text(model.visualsFaded ? "FADED TO BLACK" : status)
                         .font(Velo.display(13))
                         .tracking(1.2)
                         .foregroundStyle(.white.opacity(0.7))
-                    Text("3840 \u{00D7} 2160 \u{00B7} \(Int(model.perf.fps)) fps \u{00B7} "
+                    Text(resolution + " \u{00B7} \(Int(model.perf.fps)) fps \u{00B7} "
                          + SceneCatalog.names[model.sceneIndex])
                         .font(Velo.readout(13))
                         .monospacedDigit()
